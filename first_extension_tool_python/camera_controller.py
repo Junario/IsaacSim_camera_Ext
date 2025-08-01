@@ -1,0 +1,226 @@
+# SPDX-FileCopyrightText: Copyright (c) 2022-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import omni.kit.commands
+import omni.usd
+from pxr import Gf, Sdf, UsdGeom, UsdLux
+from isaacsim.core.utils.stage import get_current_stage
+
+
+class CameraController:
+    """카메라 생성 및 관리 클래스"""
+    
+    def __init__(self):
+        self.cameras = {}  # 생성된 카메라들을 저장
+        self.stage = None
+        self._update_stage()
+    
+    def _update_stage(self):
+        """현재 스테이지 업데이트"""
+        self.stage = get_current_stage()
+    
+    def create_basic_camera(self, camera_name: str, position: Gf.Vec3f = Gf.Vec3f(0, 0, 10)):
+        """
+        기본 카메라 생성
+        
+        Args:
+            camera_name (str): 카메라 이름
+            position (Gf.Vec3f): 카메라 위치 (x, y, z)
+        
+        Returns:
+            bool: 성공 여부
+        """
+        try:
+            self._update_stage()
+            
+            # 카메라 경로 생성
+            camera_path = f"/World/{camera_name}"
+            
+            # 카메라가 이미 존재하는지 확인
+            if self.stage.GetPrimAtPath(camera_path).IsValid():
+                print(f"카메라 '{camera_name}'이(가) 이미 존재합니다.")
+                return False
+            
+            # 카메라 생성
+            omni.kit.commands.execute(
+                "CreatePrim",
+                prim_type="Camera",
+                prim_path=camera_path
+            )
+            
+            # 카메라 속성 설정
+            from pxr import UsdGeom
+            camera_prim = self.stage.GetPrimAtPath(camera_path)
+            camera = UsdGeom.Camera(camera_prim)
+            
+            # 위치 설정 (기존 transform operation이 있는지 확인)
+            xformable = UsdGeom.Xformable(camera_prim)
+            translate_op = None
+            
+            # 기존 translate operation 찾기
+            for op in xformable.GetOrderedXformOps():
+                if op.GetOpType() == UsdGeom.XformOp.TypeTranslate:
+                    translate_op = op
+                    break
+            
+            # translate operation이 없으면 새로 생성
+            if translate_op is None:
+                translate_op = xformable.AddTranslateOp()
+            
+            # 위치 설정
+            translate_op.Set(position)
+            
+            # 카메라 속성 설정
+            camera.CreateFocalLengthAttr().Set(24.0)
+            camera.CreateHorizontalApertureAttr().Set(20.955)
+            camera.CreateVerticalApertureAttr().Set(15.2908)
+            
+            # 카메라 정보 저장
+            self.cameras[camera_name] = {
+                "path": camera_path,
+                "position": position,
+                "type": "basic"
+            }
+            
+            print(f"카메라 '{camera_name}'이(가) 생성되었습니다. 위치: {position}")
+            return True
+            
+        except Exception as e:
+            print(f"카메라 생성 중 오류 발생: {e}")
+            return False
+    
+    def create_drone_camera(self, camera_name: str, position: Gf.Vec3f = Gf.Vec3f(0, 0, 10)):
+        """
+        드론 카메라 생성 (넓은 시야각)
+        
+        Args:
+            camera_name (str): 카메라 이름
+            position (Gf.Vec3f): 카메라 위치 (x, y, z)
+        
+        Returns:
+            bool: 성공 여부
+        """
+        try:
+            self._update_stage()
+            
+            # 카메라 경로 생성
+            camera_path = f"/World/{camera_name}"
+            
+            # 카메라가 이미 존재하는지 확인
+            if self.stage.GetPrimAtPath(camera_path).IsValid():
+                print(f"카메라 '{camera_name}'이(가) 이미 존재합니다.")
+                return False
+            
+            # 드론 카메라 생성 (넓은 시야각)
+            omni.kit.commands.execute(
+                "CreatePrim",
+                prim_type="Camera",
+                prim_path=camera_path
+            )
+            
+            # 카메라 속성 설정
+            from pxr import UsdGeom
+            camera_prim = self.stage.GetPrimAtPath(camera_path)
+            camera = UsdGeom.Camera(camera_prim)
+            
+            # 위치 설정 (기존 transform operation이 있는지 확인)
+            xformable = UsdGeom.Xformable(camera_prim)
+            translate_op = None
+            
+            # 기존 translate operation 찾기
+            for op in xformable.GetOrderedXformOps():
+                if op.GetOpType() == UsdGeom.XformOp.TypeTranslate:
+                    translate_op = op
+                    break
+            
+            # translate operation이 없으면 새로 생성
+            if translate_op is None:
+                translate_op = xformable.AddTranslateOp()
+            
+            # 위치 설정
+            translate_op.Set(position)
+            
+            # 드론 카메라 속성 설정 (넓은 시야각)
+            camera.CreateFocalLengthAttr().Set(16.0)  # 넓은 시야각을 위한 짧은 초점 거리
+            camera.CreateHorizontalApertureAttr().Set(20.955)
+            camera.CreateVerticalApertureAttr().Set(15.2908)
+            
+            # 카메라 정보 저장
+            self.cameras[camera_name] = {
+                "path": camera_path,
+                "position": position,
+                "type": "drone",
+                "checkpoints": []  # 체크포인트 리스트
+            }
+            
+            print(f"드론 카메라 '{camera_name}'이(가) 생성되었습니다. 위치: {position}")
+            return True
+            
+        except Exception as e:
+            print(f"드론 카메라 생성 중 오류 발생: {e}")
+            return False
+    
+    def add_checkpoint(self, camera_name: str, position: Gf.Vec3f):
+        """
+        드론 카메라에 체크포인트 추가
+        
+        Args:
+            camera_name (str): 카메라 이름
+            position (Gf.Vec3f): 체크포인트 위치
+        """
+        if camera_name in self.cameras and self.cameras[camera_name]["type"] == "drone":
+            self.cameras[camera_name]["checkpoints"].append(position)
+            print(f"체크포인트가 추가되었습니다: {position}")
+        else:
+            print(f"드론 카메라 '{camera_name}'을(를) 찾을 수 없습니다.")
+    
+    def remove_camera(self, camera_name: str):
+        """
+        카메라 제거
+        
+        Args:
+            camera_name (str): 제거할 카메라 이름
+        """
+        try:
+            if camera_name in self.cameras:
+                camera_path = self.cameras[camera_name]["path"]
+                omni.kit.commands.execute("DeletePrims", paths=[camera_path])
+                del self.cameras[camera_name]
+                print(f"카메라 '{camera_name}'이(가) 제거되었습니다.")
+            else:
+                print(f"카메라 '{camera_name}'을(를) 찾을 수 없습니다.")
+        except Exception as e:
+            print(f"카메라 제거 중 오류 발생: {e}")
+    
+    def get_camera_list(self):
+        """
+        생성된 카메라 목록 반환
+        
+        Returns:
+            list: 카메라 이름 리스트
+        """
+        return list(self.cameras.keys())
+    
+    def get_camera_info(self, camera_name: str):
+        """
+        카메라 정보 반환
+        
+        Args:
+            camera_name (str): 카메라 이름
+        
+        Returns:
+            dict: 카메라 정보
+        """
+        return self.cameras.get(camera_name, None)
