@@ -186,6 +186,117 @@ class CameraController:
         else:
             print(f"드론 카메라 '{camera_name}'을(를) 찾을 수 없습니다.")
     
+    def clear_checkpoints(self, camera_name: str):
+        """
+        드론 카메라의 모든 체크포인트 제거
+        
+        Args:
+            camera_name (str): 카메라 이름
+        """
+        if camera_name in self.cameras and self.cameras[camera_name]["type"] == "drone":
+            self.cameras[camera_name]["checkpoints"].clear()
+            print(f"드론 카메라 '{camera_name}'의 모든 체크포인트가 제거되었습니다.")
+        else:
+            print(f"드론 카메라 '{camera_name}'을(를) 찾을 수 없습니다.")
+    
+    def get_checkpoints(self, camera_name: str):
+        """
+        드론 카메라의 체크포인트 목록 반환
+        
+        Args:
+            camera_name (str): 카메라 이름
+        
+        Returns:
+            list: 체크포인트 위치 리스트
+        """
+        if camera_name in self.cameras and self.cameras[camera_name]["type"] == "drone":
+            return self.cameras[camera_name]["checkpoints"]
+        else:
+            print(f"드론 카메라 '{camera_name}'을(를) 찾을 수 없습니다.")
+            return []
+    
+    def remove_checkpoint(self, camera_name: str, index: int):
+        """
+        특정 인덱스의 체크포인트 제거
+        
+        Args:
+            camera_name (str): 카메라 이름
+            index (int): 제거할 체크포인트 인덱스
+        """
+        if camera_name in self.cameras and self.cameras[camera_name]["type"] == "drone":
+            checkpoints = self.cameras[camera_name]["checkpoints"]
+            if 0 <= index < len(checkpoints):
+                removed_checkpoint = checkpoints.pop(index)
+                print(f"체크포인트가 제거되었습니다: {removed_checkpoint}")
+            else:
+                print(f"인덱스 {index}가 유효하지 않습니다.")
+        else:
+            print(f"드론 카메라 '{camera_name}'을(를) 찾을 수 없습니다.")
+    
+    def enable_checkpoint(self, camera_name: str, index: int, enabled: bool = True):
+        """
+        체크포인트 활성화/비활성화
+        
+        Args:
+            camera_name (str): 카메라 이름
+            index (int): 체크포인트 인덱스
+            enabled (bool): 활성화 여부
+        """
+        if camera_name in self.cameras and self.cameras[camera_name]["type"] == "drone":
+            if "checkpoint_states" not in self.cameras[camera_name]:
+                self.cameras[camera_name]["checkpoint_states"] = {}
+            
+            checkpoints = self.cameras[camera_name]["checkpoints"]
+            if 0 <= index < len(checkpoints):
+                self.cameras[camera_name]["checkpoint_states"][index] = enabled
+                status = "활성화" if enabled else "비활성화"
+                print(f"체크포인트 {index}가 {status}되었습니다.")
+            else:
+                print(f"인덱스 {index}가 유효하지 않습니다.")
+        else:
+            print(f"드론 카메라 '{camera_name}'을(를) 찾을 수 없습니다.")
+    
+    def is_checkpoint_enabled(self, camera_name: str, index: int) -> bool:
+        """
+        체크포인트 활성화 상태 확인
+        
+        Args:
+            camera_name (str): 카메라 이름
+            index (int): 체크포인트 인덱스
+        
+        Returns:
+            bool: 활성화 여부 (기본값: True)
+        """
+        if camera_name in self.cameras and self.cameras[camera_name]["type"] == "drone":
+            if "checkpoint_states" not in self.cameras[camera_name]:
+                return True  # 기본값: 활성화
+            
+            return self.cameras[camera_name]["checkpoint_states"].get(index, True)
+        else:
+            return True  # 기본값: 활성화
+    
+    def get_enabled_checkpoints(self, camera_name: str):
+        """
+        활성화된 체크포인트만 반환
+        
+        Args:
+            camera_name (str): 카메라 이름
+        
+        Returns:
+            list: 활성화된 체크포인트 위치 리스트
+        """
+        if camera_name in self.cameras and self.cameras[camera_name]["type"] == "drone":
+            checkpoints = self.cameras[camera_name]["checkpoints"]
+            enabled_checkpoints = []
+            
+            for i, checkpoint in enumerate(checkpoints):
+                if self.is_checkpoint_enabled(camera_name, i):
+                    enabled_checkpoints.append(checkpoint)
+            
+            return enabled_checkpoints
+        else:
+            return []
+    
     def remove_camera(self, camera_name: str):
         """
         카메라 제거
