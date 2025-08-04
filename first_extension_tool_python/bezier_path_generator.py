@@ -90,81 +90,119 @@ class BezierPathGenerator:
         """
         points = []
         
-        # 전체 경로를 하나의 연속적인 곡선으로 생성
-        # 체크포인트들을 제어점으로 사용하여 부드러운 곡선 생성
-        
-        # 시작점 추가 (드론 초기 위치)
-        if checkpoints:
-            points.append(checkpoints[0])
-        
         # 체크포인트가 2개 이상인 경우 곡선 생성
         if len(checkpoints) >= 2:
-            # 전체 곡선을 위한 포인트 수 계산
-            total_points = points_per_segment * (len(checkpoints) - 1)
+            # 각 체크포인트 쌍 사이에 곡선 생성
+            for i in range(len(checkpoints) - 1):
+                start_cp = checkpoints[i]
+                end_cp = checkpoints[i + 1]
+                
+                # 현재 세그먼트의 곡선 포인트 생성
+                segment_points = self._generate_smooth_segment(start_cp, end_cp, points_per_segment)
+                
+                # 첫 번째 세그먼트가 아닌 경우 시작점 제거 (중복 방지)
+                if i > 0:
+                    segment_points = segment_points[1:]
+                
+                points.extend(segment_points)
             
-            for i in range(total_points):
-                t = i / (total_points - 1)
-                
-                # 체크포인트 인덱스 계산
-                checkpoint_index = t * (len(checkpoints) - 1)
-                current_index = int(checkpoint_index)
-                next_index = min(current_index + 1, len(checkpoints) - 1)
-                
-                # 보간 계수 계산
-                local_t = checkpoint_index - current_index
-                
-                # 현재 세그먼트의 체크포인트들
-                p0 = checkpoints[current_index]
-                p1 = checkpoints[next_index]
-                
-                # 다음 세그먼트의 체크포인트 (곡선 방향 결정)
-                if next_index + 1 < len(checkpoints):
-                    p2 = checkpoints[next_index + 1]
-                    # 3점 베지어 곡선으로 부드러운 전환
-                    point = self._interpolate_smooth_bezier(p0, p1, p2, local_t)
-                else:
-                    # 마지막 세그먼트는 선형 보간
-                    point = p0 * (1 - local_t) + p1 * local_t
-                
-                # 미세한 자연스러운 편차 추가
-                point = self._add_natural_deviation(point, t)
-                
-                points.append(point)
+            # 마지막 체크포인트도 포함
+            points.append(checkpoints[-1])
         
         return points
     
-
-    
-
-    
-
-    
-    def _interpolate_smooth_bezier(self, p0: Gf.Vec3f, p1: Gf.Vec3f, p2: Gf.Vec3f, t: float):
+    def _generate_smooth_segment(self, start_point: Gf.Vec3f, end_point: Gf.Vec3f, num_points: int):
         """
-        부드러운 3점 베지어 곡선 보간
+        두 체크포인트 사이의 부드러운 곡선 세그먼트 생성
         
         Args:
-            p0 (Gf.Vec3f): 시작점
-            p1 (Gf.Vec3f): 중간점 (통과할 체크포인트)
-            p2 (Gf.Vec3f): 끝점
+            start_point (Gf.Vec3f): 시작 체크포인트
+            end_point (Gf.Vec3f): 끝 체크포인트
+            num_points (int): 생성할 포인트 수
+        
+        Returns:
+            list: 부드러운 곡선 세그먼트 포인트들
+        """
+        points = []
+        
+        # 거리 계산
+        distance = (end_point - start_point).GetLength()
+        
+        # 곡선 제어점 생성 (더 강한 곡선)
+        # 중간점에서 수직 방향으로 벗어난 점을 제어점으로 사용
+        mid_point = (start_point + end_point) * 0.5
+        
+        # 3D 공간에서 올바른 수직 벡터 생성
+        direction = (end_point - start_point).GetNormalized()
+        
+        # 수직 벡터 생성 (3D 공간에서)
+        if abs(direction[2]) < 0.9:  # Z축과 수직이 아닌 경우
+            perpendicular = Gf.Vec3f(-direction[1], direction[0], 0.0)
+        else:  # Z축과 거의 평행한 경우
+            perpendicular = Gf.Vec3f(1.0, 0.0, 0.0)
+        
+        # 곡선 강도 증가 (더 명확한 곡선)
+        curve_strength = distance * 0.6  # 거리에 비례한 곡선 강도 (더 강하게)
+        
+        # 여러 개의 제어점 생성 (더 부드러운 곡선)
+        control_point1 = mid_point + perpendicular * curve_strength * 0.7
+        control_point2 = mid_point + perpendicular * curve_strength * 0.9
+        
+        for i in range(num_points):
+            t = i / (num_points - 1)
+            
+            # 부드러운 베지어 곡선 보간 (여러 제어점 사용)
+            point = self._interpolate_smooth_curve_multi(start_point, end_point, control_point1, control_point2, t)
+            
+            # 미세한 자연스러운 편차 추가
+            point = self._add_natural_deviation(point, t)
+            
+            points.append(point)
+        
+        # 시작점과 끝점을 정확히 포함 (곡선을 유지하면서)
+        if points:
+            points[0] = start_point
+            points[-1] = end_point
+        
+        return points
+    
+    def _interpolate_smooth_curve(self, start_point: Gf.Vec3f, end_point: Gf.Vec3f, control_point: Gf.Vec3f, t: float):
+        """
+        부드러운 곡선 보간 (3점 베지어 곡선)
+        
+        Args:
+            start_point (Gf.Vec3f): 시작점
+            end_point (Gf.Vec3f): 끝점
+            control_point (Gf.Vec3f): 제어점
             t (float): 보간 매개변수 (0.0 ~ 1.0)
         
         Returns:
             Gf.Vec3f: 보간된 점
         """
-        # 중간점 계산
-        mid_point = (p0 + p2) * 0.5
-        
-        # 체크포인트 방향으로의 제어점 생성
-        direction_to_p1 = (p1 - mid_point).GetNormalized()
-        
-        # 곡선 강도 (더 부드럽게)
-        curve_strength = 0.8
-        control_offset = direction_to_p1 * (p1 - mid_point).GetLength() * curve_strength
-        control_point = p1 + control_offset
-        
         # 3점 베지어 곡선 공식: B(t) = (1-t)²P₀ + 2(1-t)tP₁ + t²P₂
-        point = (1 - t) * (1 - t) * p0 + 2 * (1 - t) * t * control_point + t * t * p2
+        point = (1 - t) * (1 - t) * start_point + 2 * (1 - t) * t * control_point + t * t * end_point
+        
+        return point
+    
+    def _interpolate_smooth_curve_multi(self, start_point: Gf.Vec3f, end_point: Gf.Vec3f, control_point1: Gf.Vec3f, control_point2: Gf.Vec3f, t: float):
+        """
+        부드러운 곡선 보간 (4점 베지어 곡선)
+        
+        Args:
+            start_point (Gf.Vec3f): 시작점
+            end_point (Gf.Vec3f): 끝점
+            control_point1 (Gf.Vec3f): 첫 번째 제어점
+            control_point2 (Gf.Vec3f): 두 번째 제어점
+            t (float): 보간 매개변수 (0.0 ~ 1.0)
+        
+        Returns:
+            Gf.Vec3f: 보간된 점
+        """
+        # 4점 베지어 곡선 공식: B(t) = (1-t)³P₀ + 3(1-t)²tP₁ + 3(1-t)t²P₂ + t³P₃
+        point = (1 - t) * (1 - t) * (1 - t) * start_point + \
+                3 * (1 - t) * (1 - t) * t * control_point1 + \
+                3 * (1 - t) * t * t * control_point2 + \
+                t * t * t * end_point
         
         return point
     
