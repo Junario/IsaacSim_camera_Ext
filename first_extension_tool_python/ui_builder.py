@@ -194,6 +194,22 @@ class UIBuilder:
                     self._basic_pos_z_model = ui.SimpleFloatModel(10.0)
                     self._basic_pos_z_field = ui.FloatField(self._basic_pos_z_model)
                 
+                # 카메라 회전 입력 (도 단위)
+                with ui.HStack(spacing=5):
+                    ui.Label("Rotation X (deg):", width=80)
+                    self._basic_rot_x_model = ui.SimpleFloatModel(0.0)
+                    self._basic_rot_x_field = ui.FloatField(self._basic_rot_x_model)
+                
+                with ui.HStack(spacing=5):
+                    ui.Label("Rotation Y (deg):", width=80)
+                    self._basic_rot_y_model = ui.SimpleFloatModel(0.0)
+                    self._basic_rot_y_field = ui.FloatField(self._basic_rot_y_model)
+                
+                with ui.HStack(spacing=5):
+                    ui.Label("Rotation Z (deg):", width=80)
+                    self._basic_rot_z_model = ui.SimpleFloatModel(0.0)
+                    self._basic_rot_z_field = ui.FloatField(self._basic_rot_z_model)
+                
                 # Basic 카메라 생성/제거 버튼
                 with ui.HStack(spacing=5):
                     self._create_basic_camera_btn = ui.Button("Create Basic Camera", clicked_fn=self._on_create_basic_camera)
@@ -419,14 +435,33 @@ class UIBuilder:
         pos_y = self._basic_pos_y_model.get_value_as_float()
         pos_z = self._basic_pos_z_model.get_value_as_float()
         
+        # 회전 값 가져오기 (도 단위)
+        rot_x = self._basic_rot_x_model.get_value_as_float()
+        rot_y = self._basic_rot_y_model.get_value_as_float()
+        rot_z = self._basic_rot_z_model.get_value_as_float()
+        
         from pxr import Gf
+        import math
+        
+        # 위치와 회전 설정
         position = Gf.Vec3f(pos_x, pos_y, pos_z)
         
-        success = self.camera_controller.create_basic_camera(camera_name, position)
+        # 도를 라디안으로 변환
+        rot_x_rad = math.radians(rot_x)
+        rot_y_rad = math.radians(rot_y)
+        rot_z_rad = math.radians(rot_z)
+        
+        # 회전을 쿼터니언으로 변환 (XYZ 순서)
+        from pxr import Gf
+        rotation = Gf.Rotation(Gf.Vec3d(1, 0, 0), rot_x_rad) * \
+                   Gf.Rotation(Gf.Vec3d(0, 1, 0), rot_y_rad) * \
+                   Gf.Rotation(Gf.Vec3d(0, 0, 1), rot_z_rad)
+        
+        success = self.camera_controller.create_basic_camera(camera_name, position, rotation)
         
         if success:
             self._update_camera_list()
-            print(f"기본 카메라 '{camera_name}'이(가) 성공적으로 생성되었습니다.")
+            print(f"기본 카메라 '{camera_name}'이(가) 성공적으로 생성되었습니다. 위치: {position}, 회전: ({rot_x}°, {rot_y}°, {rot_z}°)")
         else:
             print(f"기본 카메라 생성에 실패했습니다.")
     

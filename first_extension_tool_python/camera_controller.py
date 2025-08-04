@@ -31,13 +31,14 @@ class CameraController:
         """현재 스테이지 업데이트"""
         self.stage = get_current_stage()
     
-    def create_basic_camera(self, camera_name: str, position: Gf.Vec3f = Gf.Vec3f(0, 0, 10)):
+    def create_basic_camera(self, camera_name: str, position: Gf.Vec3f = Gf.Vec3f(0, 0, 10), rotation: Gf.Rotation = None):
         """
         기본 카메라 생성
         
         Args:
             camera_name (str): 카메라 이름
             position (Gf.Vec3f): 카메라 위치 (x, y, z)
+            rotation (Gf.Rotation): 카메라 회전 (기본값: None, 회전 없음)
         
         Returns:
             bool: 성공 여부
@@ -65,22 +66,32 @@ class CameraController:
             camera_prim = self.stage.GetPrimAtPath(camera_path)
             camera = UsdGeom.Camera(camera_prim)
             
-            # 위치 설정 (기존 transform operation이 있는지 확인)
+            # 위치 및 회전 설정 (기존 transform operation이 있는지 확인)
             xformable = UsdGeom.Xformable(camera_prim)
             translate_op = None
+            rotate_op = None
             
-            # 기존 translate operation 찾기
+            # 기존 transform operations 찾기
             for op in xformable.GetOrderedXformOps():
                 if op.GetOpType() == UsdGeom.XformOp.TypeTranslate:
                     translate_op = op
-                    break
+                elif op.GetOpType() == UsdGeom.XformOp.TypeRotate:
+                    rotate_op = op
             
             # translate operation이 없으면 새로 생성
             if translate_op is None:
                 translate_op = xformable.AddTranslateOp()
             
+            # rotate operation이 없으면 새로 생성
+            if rotate_op is None and rotation is not None:
+                rotate_op = xformable.AddRotateOp()
+            
             # 위치 설정
             translate_op.Set(position)
+            
+            # 회전 설정 (있는 경우에만)
+            if rotation is not None and rotate_op is not None:
+                rotate_op.Set(rotation)
             
             # 카메라 속성 설정
             camera.CreateFocalLengthAttr().Set(24.0)
@@ -91,10 +102,14 @@ class CameraController:
             self.cameras[camera_name] = {
                 "path": camera_path,
                 "position": position,
+                "rotation": rotation,
                 "type": "basic"
             }
             
-            print(f"카메라 '{camera_name}'이(가) 생성되었습니다. 위치: {position}")
+            if rotation is not None:
+                print(f"카메라 '{camera_name}'이(가) 생성되었습니다. 위치: {position}, 회전: {rotation}")
+            else:
+                print(f"카메라 '{camera_name}'이(가) 생성되었습니다. 위치: {position}")
             return True
             
         except Exception as e:
