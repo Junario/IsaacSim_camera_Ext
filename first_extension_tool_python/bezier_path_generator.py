@@ -19,7 +19,7 @@ from pxr import Gf
 
 
 class BezierPathGenerator:
-    """극값(체크포인트)에서 기울기가 0이 되었다가 방향이 바뀌는 곡선 경로 생성기"""
+    """부드러운 곡선 경로 생성기 - 체크포인트들을 자연스럽게 연결하는 연속적인 곡선"""
     
     def __init__(self, deviation_factor=0.05, speed_variation=0.05):
         """
@@ -36,15 +36,15 @@ class BezierPathGenerator:
     
     def generate_bezier_path(self, checkpoints: list, points_per_segment=15):
         """
-        체크포인트들을 극값처럼 처리하는 곡선 경로 생성
-        각 체크포인트에서 기울기가 0이 되었다가 방향이 바뀌는 곡선
+        체크포인트들을 부드러운 곡선으로 연결하는 경로 생성
+        각 체크포인트를 자연스럽게 통과하는 연속적인 곡선
         
         Args:
             checkpoints (list): 체크포인트 위치 리스트
             points_per_segment (int): 세그먼트당 생성할 포인트 수
         
         Returns:
-            list: 곡선 경로 포인트들
+            list: 부드러운 곡선 경로 포인트들
         """
         if len(checkpoints) < 2:
             return checkpoints
@@ -52,10 +52,10 @@ class BezierPathGenerator:
         self.path_points = []
         self.checkpoints = checkpoints  # 체크포인트 정보 저장
         
-        # 극값 기반 곡선 경로 생성
+        # 부드러운 곡선 경로 생성
         self.path_points = self._generate_extrema_based_path(checkpoints, points_per_segment)
         
-        print(f"극값 기반 곡선 경로 생성: {len(self.path_points)} 개의 포인트")
+        print(f"부드러운 곡선 경로 생성: {len(self.path_points)} 개의 포인트")
         if len(self.path_points) > 0:
             print(f"첫 번째 포인트: {self.path_points[0]}")
             print(f"마지막 포인트: {self.path_points[-1]}")
@@ -78,158 +78,93 @@ class BezierPathGenerator:
     
     def _generate_extrema_based_path(self, checkpoints: list, points_per_segment: int):
         """
-        극값 기반 곡선 경로 생성
-        각 체크포인트에서 기울기가 0이 되었다가 방향이 바뀌는 곡선
+        부드러운 곡선 경로 생성
+        각 체크포인트를 자연스럽게 연결하는 연속적인 곡선
         
         Args:
             checkpoints (list): 체크포인트 위치 리스트
             points_per_segment (int): 세그먼트당 생성할 포인트 수
         
         Returns:
-            list: 곡선 경로 포인트들
+            list: 부드러운 곡선 경로 포인트들
         """
         points = []
         
-        # 각 체크포인트 쌍 사이에 극값 기반 곡선 생성
-        for i in range(len(checkpoints) - 1):
-            start_cp = checkpoints[i]
-            end_cp = checkpoints[i + 1]
-            
-            # 현재 세그먼트의 극값 기반 곡선 생성
-            segment_points = self._generate_extrema_segment(start_cp, end_cp, points_per_segment)
-            
-            # 첫 번째 세그먼트가 아닌 경우 시작점 제거 (중복 방지)
-            if i > 0:
-                segment_points = segment_points[1:]
-            
-            points.extend(segment_points)
+        # 전체 경로를 하나의 연속적인 곡선으로 생성
+        # 체크포인트들을 제어점으로 사용하여 부드러운 곡선 생성
         
-        # 마지막 체크포인트도 포함
+        # 시작점 추가 (드론 초기 위치)
         if checkpoints:
-            points.append(checkpoints[-1])
+            points.append(checkpoints[0])
+        
+        # 체크포인트가 2개 이상인 경우 곡선 생성
+        if len(checkpoints) >= 2:
+            # 전체 곡선을 위한 포인트 수 계산
+            total_points = points_per_segment * (len(checkpoints) - 1)
+            
+            for i in range(total_points):
+                t = i / (total_points - 1)
+                
+                # 체크포인트 인덱스 계산
+                checkpoint_index = t * (len(checkpoints) - 1)
+                current_index = int(checkpoint_index)
+                next_index = min(current_index + 1, len(checkpoints) - 1)
+                
+                # 보간 계수 계산
+                local_t = checkpoint_index - current_index
+                
+                # 현재 세그먼트의 체크포인트들
+                p0 = checkpoints[current_index]
+                p1 = checkpoints[next_index]
+                
+                # 다음 세그먼트의 체크포인트 (곡선 방향 결정)
+                if next_index + 1 < len(checkpoints):
+                    p2 = checkpoints[next_index + 1]
+                    # 3점 베지어 곡선으로 부드러운 전환
+                    point = self._interpolate_smooth_bezier(p0, p1, p2, local_t)
+                else:
+                    # 마지막 세그먼트는 선형 보간
+                    point = p0 * (1 - local_t) + p1 * local_t
+                
+                # 미세한 자연스러운 편차 추가
+                point = self._add_natural_deviation(point, t)
+                
+                points.append(point)
         
         return points
     
-    def _generate_extrema_segment(self, start_point: Gf.Vec3f, end_point: Gf.Vec3f, num_points: int):
-        """
-        두 체크포인트 사이의 극값 기반 곡선 세그먼트 생성
-        시작점에서 감속 -> 체크포인트에서 정지 -> 끝점으로 가속
-        
-        Args:
-            start_point (Gf.Vec3f): 시작 체크포인트
-            end_point (Gf.Vec3f): 끝 체크포인트
-            num_points (int): 생성할 포인트 수
-        
-        Returns:
-            list: 극값 기반 곡선 세그먼트 포인트들
-        """
-        points = []
-        
-        # 방향 벡터와 거리 계산
-        direction = (end_point - start_point).GetNormalized()
-        distance = (end_point - start_point).GetLength()
-        
-        # 중간 제어점 생성 (곡선의 방향 결정)
-        mid_point = (start_point + end_point) * 0.5
-        
-        # 극값 기반 곡선을 위한 추가 제어점들
-        control_points = self._generate_extrema_control_points(start_point, end_point, direction, distance)
-        
-        for i in range(num_points):
-            t = i / (num_points - 1)
-            
-            # 극값 기반 곡선 보간 (3차 다항식 스타일)
-            point = self._interpolate_extrema_curve(start_point, end_point, control_points, t)
-            
-            # 미세한 자연스러운 편차 추가
-            point = self._add_natural_deviation(point, t)
-            
-            points.append(point)
-        
-        # 시작점과 끝점을 정확히 포함
-        if points:
-            points[0] = start_point
-            points[-1] = end_point
-        
-        return points
+
     
-    def _generate_extrema_control_points(self, start_point: Gf.Vec3f, end_point: Gf.Vec3f, direction: Gf.Vec3f, distance: float):
-        """
-        극값 기반 곡선을 위한 제어점들 생성
-        
-        Args:
-            start_point (Gf.Vec3f): 시작점
-            end_point (Gf.Vec3f): 끝점
-            direction (Gf.Vec3f): 방향 벡터
-            distance (float): 거리
-        
-        Returns:
-            list: 제어점들
-        """
-        control_points = []
-        
-        # 수직 방향 벡터 생성 (곡선 방향)
-        perpendicular = Gf.Vec3f(-direction[1], direction[0], direction[2])
-        
-        # 중간점
-        mid_point = (start_point + end_point) * 0.5
-        
-        # 극값 효과를 위한 제어점들
-        # 1. 시작점 근처의 제어점 (감속 구간)
-        decel_control = start_point + direction * (distance * 0.3) + perpendicular * (distance * 0.2)
-        
-        # 2. 중간 극값 제어점 (정지 구간)
-        extrema_control = mid_point + perpendicular * (distance * 0.3)
-        
-        # 3. 끝점 근처의 제어점 (가속 구간)
-        accel_control = end_point - direction * (distance * 0.3) + perpendicular * (distance * 0.2)
-        
-        control_points = [decel_control, extrema_control, accel_control]
-        
-        return control_points
+
     
-    def _interpolate_extrema_curve(self, start_point: Gf.Vec3f, end_point: Gf.Vec3f, control_points: list, t: float):
+
+    
+    def _interpolate_smooth_bezier(self, p0: Gf.Vec3f, p1: Gf.Vec3f, p2: Gf.Vec3f, t: float):
         """
-        극값 기반 곡선 보간 (3차 다항식 스타일)
+        부드러운 3점 베지어 곡선 보간
         
         Args:
-            start_point (Gf.Vec3f): 시작점
-            end_point (Gf.Vec3f): 끝점
-            control_points (list): 제어점들
+            p0 (Gf.Vec3f): 시작점
+            p1 (Gf.Vec3f): 중간점 (통과할 체크포인트)
+            p2 (Gf.Vec3f): 끝점
             t (float): 보간 매개변수 (0.0 ~ 1.0)
         
         Returns:
             Gf.Vec3f: 보간된 점
         """
-        # 극값 효과를 위한 수정된 베지어 곡선
-        # 시작점에서 감속 -> 중간에서 정지 -> 끝점으로 가속
+        # 중간점 계산
+        mid_point = (p0 + p2) * 0.5
         
-        if len(control_points) >= 3:
-            cp1, cp2, cp3 = control_points[0], control_points[1], control_points[2]
-            
-            # 중간점 계산
-            mid_point = (start_point + end_point) * 0.5
-            
-            # 극값 효과를 위한 수정된 4점 베지어 곡선
-            # B(t) = (1-t)³P₀ + 3(1-t)²tP₁ + 3(1-t)t²P₂ + t³P₃
-            
-            # 극값 효과를 위한 수정된 가중치
-            if t < 0.5:
-                # 전반부: 감속 구간
-                weight = 2 * t  # 0 -> 1
-                point = (1 - weight) * start_point + weight * cp1
-            else:
-                # 후반부: 가속 구간
-                weight = 2 * (t - 0.5)  # 0 -> 1
-                point = (1 - weight) * cp3 + weight * end_point
-            
-            # 중간 극값 제어점의 영향 추가
-            extrema_influence = 0.3 * (1 - abs(2 * t - 1)) * (cp2 - mid_point)
-            point += extrema_influence
-            
-        else:
-            # 기본 선형 보간
-            point = start_point * (1 - t) + end_point * t
+        # 체크포인트 방향으로의 제어점 생성
+        direction_to_p1 = (p1 - mid_point).GetNormalized()
+        
+        # 곡선 강도 (더 부드럽게)
+        curve_strength = 0.8
+        control_offset = direction_to_p1 * (p1 - mid_point).GetLength() * curve_strength
+        control_point = p1 + control_offset
+        
+        # 3점 베지어 곡선 공식: B(t) = (1-t)²P₀ + 2(1-t)tP₁ + t²P₂
+        point = (1 - t) * (1 - t) * p0 + 2 * (1 - t) * t * control_point + t * t * p2
         
         return point
     
