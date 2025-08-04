@@ -21,7 +21,7 @@ from .bezier_path_generator import BezierPathGenerator
 
 
 class DroneSimulator:
-    """드론 카메라 시뮬레이션 클래스"""
+    """극값 기반 곡선 움직임을 구현하는 드론 시뮬레이션 클래스"""
     
     def __init__(self):
         self.stage = None
@@ -29,8 +29,8 @@ class DroneSimulator:
         self.active_drones = {}  # 활성 드론들 관리
         self._timeline = omni.timeline.get_timeline_interface()
         
-        # 베지어 곡선 경로 생성기 초기화
-        self.path_generator = BezierPathGenerator(deviation_factor=0.25, speed_variation=0.2)
+        # 극값 기반 곡선 경로 생성기 초기화
+        self.path_generator = BezierPathGenerator(deviation_factor=0.05, speed_variation=0.05)
     
     def _update_stage(self):
         """현재 스테이지 업데이트"""
@@ -38,11 +38,11 @@ class DroneSimulator:
     
     def start_drone_simulation(self, camera_name: str, checkpoints: list, speed: float = 2.0):
         """
-        드론 시뮬레이션 시작
+        드론 시뮬레이션 시작 (극값 기반 곡선 방식)
         
         Args:
             camera_name (str): 드론 카메라 이름
-            checkpoints (list): 체크포인트 위치 리스트 (중간 경유점들)
+            checkpoints (list): 체크포인트 위치 리스트 (극값 지점들)
             speed (float): 이동 속도 (m/s)
         """
         if not checkpoints:
@@ -77,34 +77,36 @@ class DroneSimulator:
             start_position_vec3d = translate_op.Get()
             start_position = Gf.Vec3f(start_position_vec3d[0], start_position_vec3d[1], start_position_vec3d[2])
             
-            # 경로 생성: 시작점(드론 생성 위치) + 체크포인트들
+            # 극값 기반 곡선 경로 생성: 시작점(드론 생성 위치) + 체크포인트들
             path_points = [start_position] + checkpoints
             
-            # 베지어 곡선 경로 생성 (포인트 수 증가)
-            bezier_path = self.path_generator.generate_bezier_path(path_points, points_per_segment=15)
+            # 극값 기반 곡선 경로 생성
+            extrema_path = self.path_generator.generate_bezier_path(path_points, points_per_segment=15)
             speed_profile = self.path_generator.get_speed_profile(speed)
             
             # 시뮬레이션 정보 저장
             self.active_drones[camera_name] = {
                 "checkpoints": checkpoints,
-                "bezier_path": bezier_path,
+                "extrema_path": extrema_path,
                 "speed_profile": speed_profile,
                 "current_path_index": 0,
-                "current_position": bezier_path[0],
-                "target_position": bezier_path[1] if len(bezier_path) > 1 else bezier_path[0],
+                "current_position": extrema_path[0],
+                "target_position": extrema_path[1] if len(extrema_path) > 1 else extrema_path[0],
                 "is_moving": True,  # 시뮬레이션 시작 시 이동 상태로 설정
-                "camera_path": camera_path
+                "camera_path": camera_path,
+                "checkpoint_reached": 0,  # 도달한 체크포인트 수
+                "is_at_extrema": False,  # 극값(체크포인트)에 있는지 여부
+                "extrema_pause_time": 0.0  # 극값에서 정지할 시간
             }
             
             # 경로 생성기 초기화
             self.path_generator.reset_path_index()
             
             # 첫 번째 경로 포인트로 이동
-            self._move_drone_to_position(camera_name, bezier_path[0])
+            self._move_drone_to_position(camera_name, extrema_path[0])
             
-            print(f"베지어 곡선 경로 생성 완료: {len(bezier_path)} 개의 경로 포인트")
-            print(f"드론 초기화: 시작 위치={start_position}, 목표 위치={checkpoints[0] if checkpoints else start_position}")
-            
+            print(f"극값 기반 곡선 경로 생성 완료: {len(extrema_path)} 개의 경로 포인트")
+            print(f"드론 초기화: 시작 위치={start_position}, 첫 번째 체크포인트={checkpoints[0] if checkpoints else start_position}")
             print(f"드론 시뮬레이션이 시작되었습니다. 체크포인트 수: {len(checkpoints)}")
             return True
             
@@ -138,20 +140,22 @@ class DroneSimulator:
     
     def _update_drone_movement(self, camera_name: str, drone_info: dict, delta_time: float):
         """
-        드론 이동 업데이트 (베지어 곡선 경로 사용)
+        드론 이동 업데이트 (극값 기반 곡선 방식)
         
         Args:
             camera_name (str): 드론 카메라 이름
             drone_info (dict): 드론 정보
             delta_time (float): 시간 간격
         """
-        bezier_path = drone_info["bezier_path"]
+        extrema_path = drone_info["extrema_path"]
         speed_profile = drone_info["speed_profile"]
         current_path_index = drone_info["current_path_index"]
         
         # 현재 위치와 목표 위치
         current_pos = drone_info["current_position"]
         target_pos = drone_info["target_position"]
+        
+
         
         # 현재 속도 (속도 프로파일에서 가져오기)
         if current_path_index < len(speed_profile):
@@ -171,16 +175,25 @@ class DroneSimulator:
             self._debug_counter = 0
         
         if self._debug_counter < 10:
-            print(f"Bezier Debug: Current={current_pos}, Target={target_pos}, Distance={distance_to_target:.3f}, Speed={current_speed:.2f}, PathIndex={current_path_index}")
+            print(f"Extrema Debug: Current={current_pos}, Target={target_pos}, Distance={distance_to_target:.3f}, Speed={current_speed:.2f}, PathIndex={current_path_index}")
             self._debug_counter += 1
         
-        if distance_to_target < 0.3:  # 목표 지점에 도달
+        # 체크포인트 도달 확인 (정지하지 않고 계속 이동)
+        checkpoint_reached = self._check_extrema_reached(drone_info, current_pos)
+        if checkpoint_reached:
+            # 이미 도달한 체크포인트인지 확인 (중복 방지)
+            already_reached = drone_info.get("checkpoint_reached", 0)
+            if checkpoint_reached > already_reached:
+                drone_info["checkpoint_reached"] = checkpoint_reached
+                print(f"체크포인트 {checkpoint_reached} 도달! 계속 이동합니다.")
+        
+        if distance_to_target < 0.15:  # 목표 지점에 도달 (더 정확하게)
             # 다음 경로 포인트로 이동
             next_path_index = current_path_index + 1
             
-            if next_path_index < len(bezier_path):
+            if next_path_index < len(extrema_path):
                 drone_info["current_path_index"] = next_path_index
-                drone_info["target_position"] = bezier_path[next_path_index]
+                drone_info["target_position"] = extrema_path[next_path_index]
                 
                 print(f"경로 포인트 {current_path_index + 1} 도달. 다음 포인트 {next_path_index + 1}로 이동.")
             else:
@@ -196,16 +209,53 @@ class DroneSimulator:
             movement = direction * current_speed * delta_time
             
             new_position = Gf.Vec3f(current_pos) + movement
-            drone_info["current_position"] = new_position
             
             # 목표 지점을 넘어서지 않도록 조정
             if distance_to_target < current_speed * delta_time:
                 # 목표 지점에 정확히 도달
-                drone_info["current_position"] = target_pos
                 new_position = target_pos
+            
+            drone_info["current_position"] = new_position
             
             # 카메라 위치 업데이트
             self._move_drone_to_position(camera_name, new_position)
+    
+    def _check_extrema_reached(self, drone_info: dict, current_pos: Gf.Vec3f):
+        """
+        현재 위치가 극값(체크포인트)에 도달했는지 확인
+        
+        Args:
+            drone_info (dict): 드론 정보
+            current_pos (Gf.Vec3f): 현재 위치
+        
+        Returns:
+            int: 도달한 체크포인트 번호 (0이면 도달하지 않음)
+        """
+        checkpoints = drone_info["checkpoints"]
+        current_path_index = drone_info["current_path_index"]
+        
+        # 디버깅 정보 (처음 몇 번만)
+        if not hasattr(self, '_checkpoint_debug_counter'):
+            self._checkpoint_debug_counter = 0
+        
+        if self._checkpoint_debug_counter < 5:
+            print(f"Checkpoint Debug: Current={current_pos}, PathIndex={current_path_index}")
+            for i, cp in enumerate(checkpoints):
+                distance = (Gf.Vec3f(cp) - Gf.Vec3f(current_pos)).GetLength()
+                print(f"  CP {i+1}: {cp}, Distance={distance:.3f}")
+            self._checkpoint_debug_counter += 1
+        
+        # 현재 경로 포인트가 체크포인트에 해당하는지 확인
+        for i, checkpoint in enumerate(checkpoints):
+            # 현재 위치가 체크포인트에 충분히 가까운지 확인
+            distance_to_checkpoint = (Gf.Vec3f(checkpoint) - Gf.Vec3f(current_pos)).GetLength()
+            if distance_to_checkpoint < 0.8:  # 체크포인트 도달 거리 (더 관대하게)
+                # 이미 도달한 체크포인트인지 확인 (중복 방지)
+                already_reached = drone_info.get("checkpoint_reached", 0)
+                if i + 1 > already_reached:
+                    return i + 1
+        
+        return 0
     
     def _move_drone_to_position(self, camera_name: str, position: Gf.Vec3f):
         """
@@ -241,7 +291,7 @@ class DroneSimulator:
                 if not hasattr(self, '_move_debug_counter'):
                     self._move_debug_counter = 0
                 
-                if self._move_debug_counter < 5:
+                if self._move_debug_counter < 3:
                     print(f"Drone Move: {camera_name} -> {position}")
                     self._move_debug_counter += 1
                 
@@ -264,31 +314,31 @@ class DroneSimulator:
         if camera_name in self.active_drones:
             drone_info = self.active_drones[camera_name]
             current_path_index = drone_info["current_path_index"]
-            bezier_path = drone_info["bezier_path"]
+            extrema_path = drone_info["extrema_path"]
+            checkpoint_reached = drone_info.get("checkpoint_reached", 0)
+            is_at_extrema = drone_info.get("is_at_extrema", False)
+            
+            status_text = ""
+            if drone_info.get("is_moving", True):
+                if checkpoint_reached > 0:
+                    status_text = f"Active - CP {checkpoint_reached}/{len(drone_info['checkpoints'])} 도달! (Path: {current_path_index + 1}/{len(extrema_path)})"
+                else:
+                    status_text = f"Active - CP {checkpoint_reached}/{len(drone_info['checkpoints'])} (Path: {current_path_index + 1}/{len(extrema_path)})"
+            else:
+                status_text = f"Stopped - CP {checkpoint_reached}/{len(drone_info['checkpoints'])} (마지막 체크포인트 도달)"
             
             return {
                 "current_path_point": current_path_index + 1,
-                "total_path_points": len(bezier_path),
-                "current_checkpoint": self._get_current_checkpoint_index(drone_info),
+                "total_path_points": len(extrema_path),
+                "current_checkpoint": checkpoint_reached,
                 "total_checkpoints": len(drone_info["checkpoints"]),
                 "current_position": drone_info["current_position"],
                 "is_active": True,
-                "is_moving": drone_info["is_moving"]
+                "is_moving": drone_info["is_moving"],
+                "status_text": status_text
             }
         else:
             return {"is_active": False}
-    
-    def _get_current_checkpoint_index(self, drone_info: dict):
-        """현재 경로 포인트가 어느 체크포인트 구간에 있는지 계산"""
-        current_path_index = drone_info["current_path_index"]
-        bezier_path = drone_info["bezier_path"]
-        checkpoints = drone_info["checkpoints"]
-        
-        # 경로 포인트를 체크포인트 인덱스로 변환
-        points_per_segment = len(bezier_path) // max(1, len(checkpoints) - 1)
-        checkpoint_index = current_path_index // points_per_segment
-        
-        return min(checkpoint_index + 1, len(checkpoints))
     
     def is_drone_active(self, camera_name: str):
         """

@@ -620,9 +620,11 @@ class UIBuilder:
         
         if status["is_active"]:
             if status.get("is_moving", True):
-                status_text = f"Active - CP {status['current_checkpoint']}/{status['total_checkpoints']} (Path: {status['current_path_point']}/{status['total_path_points']})"
+                # 이동 중
+                status_text = status.get("status_text", f"Active - CP {status['current_checkpoint']}/{status['total_checkpoints']} (Path: {status['current_path_point']}/{status['total_path_points']})")
             else:
-                status_text = f"Stopped - CP {status['current_checkpoint']}/{status['total_checkpoints']} (마지막 체크포인트 도달)"
+                # 정지 상태
+                status_text = status.get("status_text", f"Stopped - CP {status['current_checkpoint']}/{status['total_checkpoints']} (마지막 체크포인트 도달)")
         else:
             status_text = "Inactive"
         
