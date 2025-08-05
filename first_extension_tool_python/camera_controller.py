@@ -49,12 +49,28 @@ class CameraController:
             # 카메라 경로 생성
             camera_path = f"/World/{camera_name}"
             
-            # 카메라가 이미 존재하는지 확인
-            if self.stage.GetPrimAtPath(camera_path).IsValid():
-                print(f"카메라 '{camera_name}'이(가) 이미 존재합니다.")
-                return False
+            # 스테이지에서 카메라 존재 여부 확인
+            camera_prim = self.stage.GetPrimAtPath(camera_path)
+            
+            if camera_prim.IsValid():
+                print(f"카메라 '{camera_name}'이(가) 스테이지에 이미 존재합니다. 기존 카메라를 삭제합니다.")
+                
+                # 기존 카메라 삭제
+                try:
+                    import omni.kit.commands
+                    omni.kit.commands.execute("DeletePrims", paths=[camera_path])
+                    print(f"기존 카메라 '{camera_name}' 삭제 완료")
+                except Exception as delete_error:
+                    print(f"기존 카메라 삭제 실패: {delete_error}")
+                    return False
+            
+            # 내부 카메라 목록에서도 제거 (있는 경우)
+            if camera_name in self.cameras:
+                del self.cameras[camera_name]
+                print(f"내부 카메라 목록에서 '{camera_name}' 제거")
             
             # 카메라 생성
+            import omni.kit.commands
             omni.kit.commands.execute(
                 "CreatePrim",
                 prim_type="Camera",
@@ -75,23 +91,28 @@ class CameraController:
             for op in xformable.GetOrderedXformOps():
                 if op.GetOpType() == UsdGeom.XformOp.TypeTranslate:
                     translate_op = op
-                elif op.GetOpType() == UsdGeom.XformOp.TypeRotate:
+                elif op.GetOpType() == UsdGeom.XformOp.TypeRotateZ:  # TypeRotate 대신 TypeRotateZ 사용
                     rotate_op = op
             
             # translate operation이 없으면 새로 생성
             if translate_op is None:
                 translate_op = xformable.AddTranslateOp()
             
-            # rotate operation이 없으면 새로 생성
-            if rotate_op is None and rotation is not None:
-                rotate_op = xformable.AddRotateOp()
-            
             # 위치 설정
             translate_op.Set(position)
             
             # 회전 설정 (있는 경우에만)
-            if rotation is not None and rotate_op is not None:
-                rotate_op.Set(rotation)
+            if rotation is not None:
+                try:
+                    # rotate operation이 없으면 새로 생성
+                    if rotate_op is None:
+                        rotate_op = xformable.AddRotateOp()
+                    
+                    rotate_op.Set(rotation)
+                    print(f"회전 설정 완료: {rotation}")
+                except Exception as rotation_error:
+                    print(f"회전 설정 실패: {rotation_error}")
+                    # 회전 설정이 실패해도 카메라는 생성 계속 진행
             
             # 카메라 속성 설정
             camera.CreateFocalLengthAttr().Set(24.0)
@@ -105,6 +126,11 @@ class CameraController:
                 "rotation": rotation,
                 "type": "basic"
             }
+            
+            # 디버깅 정보 추가
+            print(f"카메라 정보 저장 완료: {camera_name}")
+            print(f"내부 카메라 목록: {self.cameras}")
+            print(f"카메라 목록 키: {list(self.cameras.keys())}")
             
             if rotation is not None:
                 print(f"카메라 '{camera_name}'이(가) 생성되었습니다. 위치: {position}, 회전: {rotation}")
@@ -133,12 +159,28 @@ class CameraController:
             # 카메라 경로 생성
             camera_path = f"/World/{camera_name}"
             
-            # 카메라가 이미 존재하는지 확인
-            if self.stage.GetPrimAtPath(camera_path).IsValid():
-                print(f"카메라 '{camera_name}'이(가) 이미 존재합니다.")
-                return False
+            # 스테이지에서 카메라 존재 여부 확인
+            camera_prim = self.stage.GetPrimAtPath(camera_path)
+            
+            if camera_prim.IsValid():
+                print(f"카메라 '{camera_name}'이(가) 스테이지에 이미 존재합니다. 기존 카메라를 삭제합니다.")
+                
+                # 기존 카메라 삭제
+                try:
+                    import omni.kit.commands
+                    omni.kit.commands.execute("DeletePrims", paths=[camera_path])
+                    print(f"기존 카메라 '{camera_name}' 삭제 완료")
+                except Exception as delete_error:
+                    print(f"기존 카메라 삭제 실패: {delete_error}")
+                    return False
+            
+            # 내부 카메라 목록에서도 제거 (있는 경우)
+            if camera_name in self.cameras:
+                del self.cameras[camera_name]
+                print(f"내부 카메라 목록에서 '{camera_name}' 제거")
             
             # 드론 카메라 생성 (넓은 시야각)
+            import omni.kit.commands
             omni.kit.commands.execute(
                 "CreatePrim",
                 prim_type="Camera",
@@ -320,15 +362,74 @@ class CameraController:
             camera_name (str): 제거할 카메라 이름
         """
         try:
-            if camera_name in self.cameras:
-                camera_path = self.cameras[camera_name]["path"]
-                omni.kit.commands.execute("DeletePrims", paths=[camera_path])
-                del self.cameras[camera_name]
-                print(f"카메라 '{camera_name}'이(가) 제거되었습니다.")
+            self._update_stage()
+            
+            # 카메라 경로 생성
+            camera_path = f"/World/{camera_name}"
+            
+            print(f"카메라 삭제 시도: {camera_path}")
+            
+            # 실제 스테이지에서 카메라 존재 여부 확인
+            camera_prim = self.stage.GetPrimAtPath(camera_path)
+            
+            if camera_prim.IsValid():
+                print(f"스테이지에서 카메라 발견: {camera_path}")
+                
+                # 방법 1: DeletePrims 명령 사용
+                try:
+                    print("방법 1: DeletePrims 시도")
+                    import omni.kit.commands
+                    omni.kit.commands.execute("DeletePrims", paths=[camera_path])
+                    print("DeletePrims 성공")
+                    
+                    # 삭제 확인
+                    if not self.stage.GetPrimAtPath(camera_path).IsValid():
+                        print("카메라가 성공적으로 삭제되었습니다.")
+                    else:
+                        print("DeletePrims로 삭제되지 않음, 다른 방법 시도")
+                        raise Exception("DeletePrims 실패")
+                        
+                except Exception as e1:
+                    print(f"DeletePrims 실패: {e1}")
+                    
+                    # 방법 2: 스테이지에서 직접 삭제
+                    try:
+                        print("방법 2: 스테이지에서 직접 삭제 시도")
+                        self.stage.RemovePrim(camera_path)
+                        print("스테이지에서 직접 삭제 성공")
+                        
+                        # 삭제 확인
+                        if not self.stage.GetPrimAtPath(camera_path).IsValid():
+                            print("카메라가 성공적으로 삭제되었습니다.")
+                        else:
+                            print("스테이지에서 직접 삭제되지 않음")
+                            raise Exception("스테이지 삭제 실패")
+                            
+                    except Exception as e2:
+                        print(f"스테이지 삭제 실패: {e2}")
+                        print(f"카메라 '{camera_name}' 삭제에 실패했습니다.")
+                        return False
+                
+                # 내부 카메라 목록에서 제거
+                if camera_name in self.cameras:
+                    del self.cameras[camera_name]
+                    print(f"내부 카메라 목록에서 '{camera_name}' 제거")
+                
+                return True
+                
             else:
-                print(f"카메라 '{camera_name}'을(를) 찾을 수 없습니다.")
+                print(f"스테이지에서 카메라를 찾을 수 없음: {camera_path}")
+                
+                # 스테이지에 없지만 내부 목록에 있는 경우 정리
+                if camera_name in self.cameras:
+                    del self.cameras[camera_name]
+                    print(f"내부 카메라 목록에서 '{camera_name}' 정리")
+                
+                return False
+                
         except Exception as e:
             print(f"카메라 제거 중 오류 발생: {e}")
+            return False
     
     def get_camera_list(self):
         """

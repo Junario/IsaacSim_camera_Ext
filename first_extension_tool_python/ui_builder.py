@@ -121,7 +121,7 @@ class UIBuilder:
         world_controls_frame = CollapsableFrame("World Controls", collapsed=False)
 
         with world_controls_frame:
-            with ui.VStack(style=get_style(), spacing=5, height=0):
+            with ui.VStack(style=get_style(), spacing=5, height=0, width=400):
                 self._load_btn = LoadButton(
                     "Load Button", "LOAD", setup_scene_fn=self._setup_scene, setup_post_load_fn=self._setup_scenario
                 )
@@ -137,7 +137,7 @@ class UIBuilder:
         run_scenario_frame = CollapsableFrame("Run Scenario")
 
         with run_scenario_frame:
-            with ui.VStack(style=get_style(), spacing=5, height=0):
+            with ui.VStack(style=get_style(), spacing=5, height=0, width=400):
                 self._scenario_state_btn = StateButton(
                     "Run Scenario",
                     "RUN",
@@ -153,159 +153,154 @@ class UIBuilder:
         camera_type_frame = CollapsableFrame("Camera Type Selection", collapsed=False)
         
         with camera_type_frame:
-            with ui.VStack(style=get_style(), spacing=5, height=0):
+            with ui.VStack(style=get_style(), spacing=5, height=0, width=400):
                 # 카메라 타입 선택
-                with ui.HStack(spacing=5):
+                with ui.HStack(spacing=5, width=400):
                     ui.Label("Selected Type:", width=80)
                     self._camera_type_model = ui.SimpleStringModel("basic")
-                    self._camera_type_label = ui.Label("basic")
+                    self._camera_type_label = ui.Label("basic", width=100)
                 
                 # 카메라 타입 선택 버튼
-                with ui.HStack(spacing=5):
-                    self._basic_camera_btn = ui.Button("Basic Camera", clicked_fn=self._on_select_basic_camera)
-                    self._drone_camera_btn = ui.Button("Drone Camera", clicked_fn=self._on_select_drone_camera)
+                with ui.HStack(spacing=5, width=400):
+                    self._basic_camera_btn = ui.Button("Basic Camera", clicked_fn=self._on_select_basic_camera, width=150)
+                    self._drone_camera_btn = ui.Button("Drone Camera", clicked_fn=self._on_select_drone_camera, width=150)
         
         # 동적 UI 컨테이너
-        self._dynamic_ui_container = ui.VStack(style=get_style(), spacing=5, height=0)
+        self._dynamic_ui_container = ui.VStack(style=get_style(), spacing=5, height=0, width=400)
         
         # Basic Camera UI (초기에는 표시)
         with self._dynamic_ui_container:
-            self._basic_camera_ui = ui.VStack(style=get_style(), spacing=5, height=0)
+            self._basic_camera_ui = ui.VStack(style=get_style(), spacing=5, height=0, width=400)
             with self._basic_camera_ui:
                 # 카메라 이름 입력
-                with ui.HStack(spacing=5):
+                with ui.HStack(spacing=5, width=400):
                     ui.Label("Camera Name:", width=80)
                     self._basic_camera_name_model = ui.SimpleStringModel("basic_camera_1")
-                    self._basic_camera_name_field = ui.StringField(self._basic_camera_name_model)
+                    self._basic_camera_name_field = ui.StringField(self._basic_camera_name_model, width=200)
                 
-                # 카메라 위치 입력
-                with ui.HStack(spacing=5):
-                    ui.Label("Position X:", width=80)
+                # 카메라 위치 입력 (한 줄에 X, Y, Z)
+                with ui.HStack(spacing=5, width=400):
+                    ui.Label("Position:", width=80)
+                    ui.Label("X:", width=20)
                     self._basic_pos_x_model = ui.SimpleFloatModel(0.0)
-                    self._basic_pos_x_field = ui.FloatField(self._basic_pos_x_model)
-                
-                with ui.HStack(spacing=5):
-                    ui.Label("Position Y:", width=80)
+                    self._basic_pos_x_field = ui.FloatField(self._basic_pos_x_model, width=80)
+                    ui.Label("Y:", width=20)
                     self._basic_pos_y_model = ui.SimpleFloatModel(0.0)
-                    self._basic_pos_y_field = ui.FloatField(self._basic_pos_y_model)
-                
-                with ui.HStack(spacing=5):
-                    ui.Label("Position Z:", width=80)
+                    self._basic_pos_y_field = ui.FloatField(self._basic_pos_y_model, width=80)
+                    ui.Label("Z:", width=20)
                     self._basic_pos_z_model = ui.SimpleFloatModel(10.0)
-                    self._basic_pos_z_field = ui.FloatField(self._basic_pos_z_model)
+                    self._basic_pos_z_field = ui.FloatField(self._basic_pos_z_model, width=80)
                 
-                # 카메라 회전 입력 (도 단위)
-                with ui.HStack(spacing=5):
-                    ui.Label("Rotation X (deg):", width=80)
+                # 카메라 회전 입력 (한 줄에 X, Y, Z)
+                with ui.HStack(spacing=5, width=400):
+                    ui.Label("Rotation:", width=80)
+                    ui.Label("X:", width=20)
                     self._basic_rot_x_model = ui.SimpleFloatModel(0.0)
-                    self._basic_rot_x_field = ui.FloatField(self._basic_rot_x_model)
-                
-                with ui.HStack(spacing=5):
-                    ui.Label("Rotation Y (deg):", width=80)
+                    self._basic_rot_x_field = ui.FloatField(self._basic_rot_x_model, width=80)
+                    ui.Label("Y:", width=20)
                     self._basic_rot_y_model = ui.SimpleFloatModel(0.0)
-                    self._basic_rot_y_field = ui.FloatField(self._basic_rot_y_model)
-                
-                with ui.HStack(spacing=5):
-                    ui.Label("Rotation Z (deg):", width=80)
+                    self._basic_rot_y_field = ui.FloatField(self._basic_rot_y_model, width=80)
+                    ui.Label("Z:", width=20)
                     self._basic_rot_z_model = ui.SimpleFloatModel(0.0)
-                    self._basic_rot_z_field = ui.FloatField(self._basic_rot_z_model)
+                    self._basic_rot_z_field = ui.FloatField(self._basic_rot_z_model, width=80)
                 
-                # Basic 카메라 생성/제거 버튼
-                with ui.HStack(spacing=5):
-                    self._create_basic_camera_btn = ui.Button("Create Basic Camera", clicked_fn=self._on_create_basic_camera)
-                    self._remove_basic_camera_btn = ui.Button("Remove Basic Camera", clicked_fn=self._on_remove_basic_camera)
+                # Basic 카메라 생성 버튼
+                with ui.HStack(spacing=5, width=400):
+                    self._create_basic_camera_btn = ui.Button("Create Basic Camera", clicked_fn=self._on_create_basic_camera, width=200)
             
             # Drone Camera UI (초기에는 숨김)
-            self._drone_camera_ui = ui.VStack(style=get_style(), spacing=5, height=0)
+            self._drone_camera_ui = ui.VStack(style=get_style(), spacing=5, height=0, width=400)
             with self._drone_camera_ui:
                 # 드론 카메라 이름 입력
-                with ui.HStack(spacing=5):
+                with ui.HStack(spacing=5, width=400):
                     ui.Label("Drone Name:", width=80)
                     self._drone_camera_name_model = ui.SimpleStringModel("drone_camera_1")
-                    self._drone_camera_name_field = ui.StringField(self._drone_camera_name_model)
+                    self._drone_camera_name_field = ui.StringField(self._drone_camera_name_model, width=200)
                 
-                # 드론 초기 위치 입력
-                with ui.HStack(spacing=5):
-                    ui.Label("Start Position X:", width=80)
+                # 드론 초기 위치 입력 (한 줄에 X, Y, Z)
+                with ui.HStack(spacing=5, width=400):
+                    ui.Label("Start Position:", width=80)
+                    ui.Label("X:", width=20)
                     self._drone_start_x_model = ui.SimpleFloatModel(0.0)
-                    self._drone_start_x_field = ui.FloatField(self._drone_start_x_model)
-                
-                with ui.HStack(spacing=5):
-                    ui.Label("Start Position Y:", width=80)
+                    self._drone_start_x_field = ui.FloatField(self._drone_start_x_model, width=80)
+                    ui.Label("Y:", width=20)
                     self._drone_start_y_model = ui.SimpleFloatModel(0.0)
-                    self._drone_start_y_field = ui.FloatField(self._drone_start_y_model)
-                
-                with ui.HStack(spacing=5):
-                    ui.Label("Start Position Z:", width=80)
+                    self._drone_start_y_field = ui.FloatField(self._drone_start_y_model, width=80)
+                    ui.Label("Z:", width=20)
                     self._drone_start_z_model = ui.SimpleFloatModel(10.0)
-                    self._drone_start_z_field = ui.FloatField(self._drone_start_z_model)
+                    self._drone_start_z_field = ui.FloatField(self._drone_start_z_model, width=80)
                 
-                # 드론 카메라 생성/제거 버튼
-                with ui.HStack(spacing=5):
-                    self._create_drone_camera_btn = ui.Button("Create Drone Camera", clicked_fn=self._on_create_drone_camera)
-                    self._remove_drone_camera_btn = ui.Button("Remove Drone Camera", clicked_fn=self._on_remove_drone_camera)
+                # 드론 카메라 생성 버튼
+                with ui.HStack(spacing=5, width=400):
+                    self._create_drone_camera_btn = ui.Button("Create Drone Camera", clicked_fn=self._on_create_drone_camera, width=200)
                 
                 # 체크포인트 관리 섹션
                 ui.Separator()
-                with ui.HStack(spacing=5):
+                with ui.HStack(spacing=5, width=400):
                     ui.Label("Checkpoint Management", width=120)
                 
                 # 체크포인트 추가
-                with ui.HStack(spacing=5):
+                with ui.HStack(spacing=5, width=400):
                     ui.Label("Add Checkpoint:", width=100)
+                    ui.Label("X:", width=20)
                     self._checkpoint_x_model = ui.SimpleFloatModel(10.0)
-                    self._checkpoint_x_field = ui.FloatField(self._checkpoint_x_model)
+                    self._checkpoint_x_field = ui.FloatField(self._checkpoint_x_model, width=80)
+                    ui.Label("Y:", width=20)
                     self._checkpoint_y_model = ui.SimpleFloatModel(10.0)
-                    self._checkpoint_y_field = ui.FloatField(self._checkpoint_y_model)
+                    self._checkpoint_y_field = ui.FloatField(self._checkpoint_y_model, width=80)
+                    ui.Label("Z:", width=20)
                     self._checkpoint_z_model = ui.SimpleFloatModel(10.0)
-                    self._checkpoint_z_field = ui.FloatField(self._checkpoint_z_model)
-                    self._add_checkpoint_btn = ui.Button("Add", clicked_fn=self._on_add_checkpoint)
+                    self._checkpoint_z_field = ui.FloatField(self._checkpoint_z_model, width=80)
+                    self._add_checkpoint_btn = ui.Button("Add", clicked_fn=self._on_add_checkpoint, width=60)
                 
                 # 체크포인트 목록
-                with ui.HStack(spacing=5):
+                with ui.HStack(spacing=5, width=400):
                     ui.Label("Checkpoints:", width=80)
                 
                 # 체크포인트 리스트 컨테이너
-                self._checkpoint_list_container = ui.VStack(style=get_style(), spacing=2, height=0)
+                self._checkpoint_list_container = ui.VStack(style=get_style(), spacing=2, height=0, width=400)
                 
                 # 체크포인트 관리 버튼
-                with ui.HStack(spacing=5):
-                    self._clear_checkpoints_btn = ui.Button("Clear All Checkpoints", clicked_fn=self._on_clear_checkpoints)
-                    self._update_checkpoint_list_btn = ui.Button("Update Checkpoint List", clicked_fn=self._update_checkpoint_list)
+                with ui.HStack(spacing=5, width=400):
+                    self._clear_checkpoints_btn = ui.Button("Clear All Checkpoints", clicked_fn=self._on_clear_checkpoints, width=150)
+                    self._update_checkpoint_list_btn = ui.Button("Update Checkpoint List", clicked_fn=self._update_checkpoint_list, width=150)
                 
                 # 드론 시뮬레이션 섹션
                 ui.Separator()
-                with ui.HStack(spacing=5):
+                with ui.HStack(spacing=5, width=400):
                     ui.Label("Drone Simulation", width=120)
                 
                 # 시뮬레이션 속도 설정
-                with ui.HStack(spacing=5):
+                with ui.HStack(spacing=5, width=400):
                     ui.Label("Speed (m/s):", width=80)
                     self._drone_speed_model = ui.SimpleFloatModel(2.0)
-                    self._drone_speed_field = ui.FloatField(self._drone_speed_model)
+                    self._drone_speed_field = ui.FloatField(self._drone_speed_model, width=80)
                 
                 # 시뮬레이션 컨트롤 버튼
-                with ui.HStack(spacing=5):
-                    self._start_drone_simulation_btn = ui.Button("Start Simulation", clicked_fn=self._on_start_drone_simulation)
-                    self._stop_drone_simulation_btn = ui.Button("Stop Simulation", clicked_fn=self._on_stop_drone_simulation)
+                with ui.HStack(spacing=5, width=400):
+                    self._start_drone_simulation_btn = ui.Button("Start Simulation", clicked_fn=self._on_start_drone_simulation, width=150)
+                    self._stop_drone_simulation_btn = ui.Button("Stop Simulation", clicked_fn=self._on_stop_drone_simulation, width=150)
                 
                 # 드론 상태 표시
-                with ui.HStack(spacing=5):
+                with ui.HStack(spacing=5, width=400):
                     ui.Label("Drone Status:", width=80)
-                    self._drone_status_label = ui.Label("Inactive")
+                    self._drone_status_label = ui.Label("Inactive", width=200)
         
         # 공통 카메라 목록 프레임
         camera_list_frame = CollapsableFrame("Camera Management", collapsed=False)
         
         with camera_list_frame:
-            with ui.VStack(style=get_style(), spacing=5, height=0):
+            with ui.VStack(style=get_style(), spacing=5, height=0, width=400):
                 # 생성된 카메라 목록
-                with ui.HStack(spacing=5):
+                with ui.HStack(spacing=5, width=400):
                     ui.Label("All Cameras:", width=100)
-                    self._camera_list_label = ui.Label("No cameras created")
+                    self._camera_list_label = ui.Label("No cameras created", width=200)
+                
+                # 카메라 리스트 컨테이너 (동적으로 업데이트)
+                self._camera_list_container = ui.VStack(style=get_style(), spacing=2, height=0, width=400)
                 
                 # 카메라 목록 업데이트 버튼
-                self._update_camera_list_btn = ui.Button("Update Camera List", clicked_fn=self._update_camera_list)
+                self._update_camera_list_btn = ui.Button("Update Camera List", clicked_fn=self._update_camera_list, width=200)
         
         # 초기 UI 상태 설정 (Basic Camera UI 표시)
         self._show_basic_camera_ui()
@@ -453,23 +448,26 @@ class UIBuilder:
         
         # 회전을 쿼터니언으로 변환 (XYZ 순서)
         from pxr import Gf
-        rotation = Gf.Rotation(Gf.Vec3d(1, 0, 0), rot_x_rad) * \
-                   Gf.Rotation(Gf.Vec3d(0, 1, 0), rot_y_rad) * \
-                   Gf.Rotation(Gf.Vec3d(0, 0, 1), rot_z_rad)
+        try:
+            rotation = Gf.Rotation(Gf.Vec3d(1, 0, 0), rot_x_rad) * \
+                       Gf.Rotation(Gf.Vec3d(0, 1, 0), rot_y_rad) * \
+                       Gf.Rotation(Gf.Vec3d(0, 0, 1), rot_z_rad)
+            print(f"회전 변환 성공: ({rot_x}°, {rot_y}°, {rot_z}°) -> {rotation}")
+        except Exception as rotation_error:
+            print(f"회전 변환 실패: {rotation_error}")
+            rotation = None  # 회전을 None으로 설정하여 회전 없이 카메라 생성
         
         success = self.camera_controller.create_basic_camera(camera_name, position, rotation)
         
         if success:
+            # 디버깅 정보 추가
+            print(f"Basic Camera 생성 성공 후 카메라 목록: {self.camera_controller.get_camera_list()}")
+            print(f"카메라 컨트롤러 내부 상태: {self.camera_controller.cameras}")
+            
             self._update_camera_list()
             print(f"기본 카메라 '{camera_name}'이(가) 성공적으로 생성되었습니다. 위치: {position}, 회전: ({rot_x}°, {rot_y}°, {rot_z}°)")
         else:
             print(f"기본 카메라 생성에 실패했습니다.")
-    
-    def _on_remove_basic_camera(self):
-        """기본 카메라 제거 버튼 클릭 콜백"""
-        camera_name = self._basic_camera_name_model.get_value_as_string()
-        self.camera_controller.remove_camera(camera_name)
-        self._update_camera_list()
     
     def _on_create_drone_camera(self):
         """드론 카메라 생성 버튼 클릭 콜백"""
@@ -486,16 +484,14 @@ class UIBuilder:
         success = self.camera_controller.create_drone_camera(camera_name, position)
         
         if success:
+            # 디버깅 정보 추가
+            print(f"Drone Camera 생성 성공 후 카메라 목록: {self.camera_controller.get_camera_list()}")
+            print(f"카메라 컨트롤러 내부 상태: {self.camera_controller.cameras}")
+            
             self._update_camera_list()
             print(f"드론 카메라 '{camera_name}'이(가) 성공적으로 생성되었습니다.")
         else:
             print(f"드론 카메라 생성에 실패했습니다.")
-    
-    def _on_remove_drone_camera(self):
-        """드론 카메라 제거 버튼 클릭 콜백"""
-        camera_name = self._drone_camera_name_model.get_value_as_string()
-        self.camera_controller.remove_camera(camera_name)
-        self._update_camera_list()
     
     def _on_add_checkpoint(self):
         """체크포인트 추가 버튼 클릭 콜백"""
@@ -576,12 +572,52 @@ class UIBuilder:
         self.camera_controller.remove_checkpoint(camera_name, index)
         self._update_checkpoint_list()
     
+    def _on_remove_camera_from_list(self, camera_name: str):
+        """카메라 리스트에서 Remove 버튼 클릭 시 호출되는 함수"""
+        success = self.camera_controller.remove_camera(camera_name)
+        if success:
+            print(f"카메라 '{camera_name}'이(가) 성공적으로 제거되었습니다.")
+        else:
+            print(f"카메라 '{camera_name}' 제거에 실패했습니다.")
+        
+        # 카메라 리스트 업데이트
+        self._update_camera_list()
+    
     def _update_camera_list(self):
         """생성된 카메라 목록 업데이트"""
         camera_list = self.camera_controller.get_camera_list()
+        
+        # 디버깅 정보 추가
+        print(f"카메라 리스트 업데이트: {camera_list}")
+        print(f"카메라 컨트롤러 내부 카메라 목록: {self.camera_controller.cameras}")
+        
+        # 기존 카메라 리스트 컨테이너 정리
+        self._camera_list_container.clear()
+        
         if camera_list:
-            camera_list_str = ", ".join(camera_list)
+            # 각 카메라에 대해 UI 생성
+            for camera_name in camera_list:
+                with self._camera_list_container:
+                    with ui.HStack(spacing=5):
+                        # 카메라 정보 표시
+                        camera_info = self.camera_controller.get_camera_info(camera_name)
+                        if camera_info:
+                            camera_type = camera_info.get("type", "unknown")
+                            position = camera_info.get("position", "unknown")
+                            camera_text = f"{camera_name} ({camera_type}) - Pos: {position}"
+                        else:
+                            camera_text = f"{camera_name} (unknown)"
+                        
+                        ui.Label(camera_text, width=300)
+                        
+                        # Remove 버튼
+                        ui.Button("Remove", clicked_fn=lambda name=camera_name: self._on_remove_camera_from_list(name))
+            
+            camera_list_str = f"{len(camera_list)} cameras created"
         else:
+            # 카메라가 없을 때
+            with self._camera_list_container:
+                ui.Label("No cameras created", width=300)
             camera_list_str = "No cameras created"
         
         self._camera_list_label.text = camera_list_str
