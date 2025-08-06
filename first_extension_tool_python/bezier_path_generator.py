@@ -148,6 +148,21 @@ class BezierPathGenerator:
         control_point1 = mid_point + perpendicular * curve_strength * 0.7
         control_point2 = mid_point + perpendicular * curve_strength * 0.9
         
+        # 디버깅 정보 출력
+        print(f"=== 세그먼트 생성 분석 ===")
+        print(f"시작점: {start_point}")
+        print(f"끝점: {end_point}")
+        print(f"거리: {distance:.2f}")
+        print(f"방향 벡터: {direction}")
+        print(f"수직 벡터: {perpendicular}")
+        print(f"중간점: {mid_point}")
+        print(f"곡선 강도: {curve_strength:.2f}")
+        print(f"제어점1: {control_point1}")
+        print(f"제어점2: {control_point2}")
+        print(f"제어점1 오프셋: {perpendicular * curve_strength * 0.7}")
+        print(f"제어점2 오프셋: {perpendicular * curve_strength * 0.9}")
+        print(f"=== 세그먼트 생성 완료 ===")
+        
         for i in range(num_points):
             t = i / (num_points - 1)
             

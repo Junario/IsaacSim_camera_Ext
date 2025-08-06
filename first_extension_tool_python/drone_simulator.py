@@ -18,6 +18,7 @@ import omni.timeline
 from pxr import Gf, UsdGeom
 from isaacsim.core.utils.stage import get_current_stage
 from .bezier_path_generator import BezierPathGenerator
+from .polynomial_path_generator import PolynomialPathGenerator
 
 
 class DroneSimulator:
@@ -31,6 +32,8 @@ class DroneSimulator:
         
         # 극값 기반 곡선 경로 생성기 초기화
         self.path_generator = BezierPathGenerator(deviation_factor=0.05, speed_variation=0.05)
+        # 다항식 곡선 경로 생성기 초기화 (새로운 알고리즘)
+        self.polynomial_path_generator = PolynomialPathGenerator(points_per_segment=20)
     
     def _update_stage(self):
         """현재 스테이지 업데이트"""
@@ -77,12 +80,12 @@ class DroneSimulator:
             start_position_vec3d = translate_op.Get()
             start_position = Gf.Vec3f(start_position_vec3d[0], start_position_vec3d[1], start_position_vec3d[2])
             
-            # 극값 기반 곡선 경로 생성: 시작점(드론 생성 위치) + 체크포인트들
+            # 다항식 곡선 경로 생성: 시작점(드론 생성 위치) + 체크포인트들
             path_points = [start_position] + checkpoints
             
-            # 극값 기반 곡선 경로 생성
-            extrema_path = self.path_generator.generate_bezier_path(path_points, points_per_segment=15)
-            speed_profile = self.path_generator.get_speed_profile(speed)
+            # 다항식 곡선 경로 생성 (새로운 알고리즘)
+            extrema_path = self.polynomial_path_generator.generate_polynomial_path(path_points)
+            speed_profile = self.polynomial_path_generator.get_speed_profile(speed)
             
             # 시뮬레이션 정보 저장
             self.active_drones[camera_name] = {
