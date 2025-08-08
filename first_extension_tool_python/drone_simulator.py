@@ -143,7 +143,7 @@ class DroneSimulator:
     
     def _update_drone_movement(self, camera_name: str, drone_info: dict, delta_time: float):
         """
-        드론 이동 업데이트 (극값 기반 곡선 방식)
+        드론 이동 업데이트 (위치 + 방향)
         
         Args:
             camera_name (str): 드론 카메라 이름
@@ -158,8 +158,6 @@ class DroneSimulator:
         current_pos = drone_info["current_position"]
         target_pos = drone_info["target_position"]
         
-
-        
         # 현재 속도 (속도 프로파일에서 가져오기)
         if current_path_index < len(speed_profile):
             current_speed = speed_profile[current_path_index]
@@ -172,14 +170,6 @@ class DroneSimulator:
         
         # 목표 지점까지의 거리 계산
         distance_to_target = (Gf.Vec3f(target_pos) - Gf.Vec3f(current_pos)).GetLength()
-        
-        # 디버깅 정보 출력 (처음 몇 번만)
-        if not hasattr(self, '_debug_counter'):
-            self._debug_counter = 0
-        
-        if self._debug_counter < 10:
-            print(f"Extrema Debug: Current={current_pos}, Target={target_pos}, Distance={distance_to_target:.3f}, Speed={current_speed:.2f}, PathIndex={current_path_index}")
-            self._debug_counter += 1
         
         # 체크포인트 도달 확인 (정지하지 않고 계속 이동)
         checkpoint_reached = self._check_extrema_reached(drone_info, current_pos)
@@ -218,10 +208,15 @@ class DroneSimulator:
                 # 목표 지점에 정확히 도달
                 new_position = target_pos
             
-            drone_info["current_position"] = new_position
-            
-            # 카메라 위치 업데이트
+            # 1. 카메라 위치 업데이트 (translate)
             self._move_drone_to_position(camera_name, new_position)
+            
+            # 2. 카메라 방향 업데이트 (orient) - 새로 추가
+            self._update_camera_orientation_based_on_tangent(
+                camera_name, new_position, extrema_path
+            )
+            
+            drone_info["current_position"] = new_position
     
     def _check_extrema_reached(self, drone_info: dict, current_pos: Gf.Vec3f):
         """
@@ -353,4 +348,301 @@ class DroneSimulator:
         Returns:
             bool: 활성 상태 여부
         """
-        return camera_name in self.active_drones 
+        return camera_name in self.active_drones
+    
+    # 접선 기반 카메라 회전 함수들 추가
+    def _calculate_tangent_at_position(self, current_pos: Gf.Vec3f, path_points: list, tangent_window: float = 2.0):
+        """
+        현재 위치에서 경로의 접선 벡터를 계산 (개선된 버전)
+        
+        Args:
+            current_pos: 현재 카메라 위치
+            path_points: 전체 경로 포인트들
+            tangent_window: 접선 계산을 위한 윈도우 크기 (미터)
+        
+        Returns:
+            Gf.Vec3f: 정규화된 접선 벡터
+        """
+        # 현재 위치에서 가장 가까운 경로 인덱스 찾기
+        nearest_idx = self._find_nearest_path_index(current_pos, path_points)
+        
+        print(f"현재 위치: {current_pos}, 가장 가까운 인덱스: {nearest_idx}/{len(path_points)}")
+        
+        # 더 정확한 접선 계산: 현재 위치에서 미래 지점으로의 방향
+        if nearest_idx < len(path_points) - 1:
+            # 현재 위치에서 다음 지점까지의 방향
+            next_point = path_points[nearest_idx + 1]
+            direction = next_point - current_pos
+            
+            # 만약 현재 위치가 다음 지점에 너무 가까우면 더 먼 지점 사용
+            if direction.GetLength() < 0.1:
+                # 더 먼 지점 찾기
+                for i in range(nearest_idx + 2, min(len(path_points), nearest_idx + 5)):
+                    if i < len(path_points):
+                        far_point = path_points[i]
+                        direction = far_point - current_pos
+                        if direction.GetLength() > 0.5:  # 충분한 거리가 있는 지점
+                            break
+            
+            tangent_vector = direction.GetNormalized()
+            print(f"접선 벡터 (다음 지점 기준): {direction} -> {tangent_vector}")
+            
+        else:
+            # 마지막 지점인 경우 이전 지점으로부터의 방향 사용
+            if nearest_idx > 0:
+                prev_point = path_points[nearest_idx - 1]
+                direction = current_pos - prev_point
+                tangent_vector = direction.GetNormalized()
+                print(f"마지막 지점 접선 벡터: {direction} -> {tangent_vector}")
+            else:
+                # 첫 번째 지점인 경우 기본 방향 사용
+                tangent_vector = Gf.Vec3f(0, 0, 1)
+                print(f"첫 번째 지점 기본 방향: {tangent_vector}")
+        
+        return tangent_vector
+    
+    def _find_nearest_path_index(self, current_pos: Gf.Vec3f, path_points: list):
+        """
+        현재 위치에서 가장 가까운 경로 인덱스 찾기
+        """
+        min_distance = float('inf')
+        nearest_idx = 0
+        
+        for i, point in enumerate(path_points):
+            distance = (point - current_pos).GetLength()
+            if distance < min_distance:
+                min_distance = distance
+                nearest_idx = i
+        
+        return nearest_idx
+    
+    def _tangent_to_quaternion(self, tangent_vector: Gf.Vec3f, up_vector: Gf.Vec3f = Gf.Vec3f(0, 0, 1)):
+        """
+        접선 벡터를 기반으로 카메라 쿼터니언 생성 (카메라가 진행 방향을 바라보도록)
+        
+        Args:
+            tangent_vector: 정규화된 접선 벡터 (진행 방향)
+            up_vector: 카메라의 상향 벡터 (기본값: Z축)
+        
+        Returns:
+            Gf.Quatd: 카메라 회전 쿼터니언
+        """
+        import math
+        
+        print(f"접선 벡터를 쿼터니언으로 변환: {tangent_vector}")
+        
+        # 카메라가 진행 방향을 바라보도록 하려면:
+        # 1. 카메라의 전방 벡터가 접선 벡터와 일치하도록 회전
+        # 2. 카메라의 상향 벡터는 up_vector와 일치하도록 유지
+        
+        # 기본 카메라 방향 (Z축이 전방)
+        camera_forward = Gf.Vec3f(0, 0, 1)
+        camera_up = Gf.Vec3f(0, 1, 0)
+        
+        # 접선 벡터가 Z축과 평행한 경우 특별 처리
+        if abs(tangent_vector[2]) > 0.99:
+            if tangent_vector[2] > 0:
+                # Z축 정방향
+                quat = Gf.Quatd(1, 0, 0, 0)
+            else:
+                # Z축 역방향
+                quat = Gf.Quatd(0, 1, 0, 0)
+            print(f"수직 이동 쿼터니언: {quat}")
+            return quat
+        
+        # 접선 벡터를 카메라 전방으로 회전시키는 쿼터니언 계산
+        # 1. 회전축 계산 (카메라 전방과 접선 벡터의 외적)
+        rotation_axis = Gf.Cross(camera_forward, tangent_vector)
+        
+        if rotation_axis.GetLength() < 1e-6:
+            # 이미 같은 방향인 경우
+            quat = Gf.Quatd(1, 0, 0, 0)
+            print(f"이미 같은 방향 쿼터니언: {quat}")
+            return quat
+        
+        rotation_axis = rotation_axis.GetNormalized()
+        
+        # 2. 회전각 계산
+        cos_angle = Gf.Dot(camera_forward, tangent_vector)
+        angle = math.acos(max(-1, min(1, cos_angle)))
+        
+        # 3. 쿼터니언 생성
+        quat = Gf.Quatd(math.sin(angle/2) * rotation_axis[0],
+                         math.sin(angle/2) * rotation_axis[1],
+                         math.sin(angle/2) * rotation_axis[2],
+                         math.cos(angle/2))
+        
+        print(f"계산된 쿼터니언 (진행 방향): {quat}")
+        print(f"회전축: {rotation_axis}, 회전각: {math.degrees(angle):.2f}도")
+        
+        return quat
+    
+    def _update_camera_rotation(self, camera_name: str, rotation: Gf.Quatd):
+        """
+        카메라 회전 업데이트
+        
+        Args:
+            camera_name: 카메라 이름
+            rotation: 새로운 회전 쿼터니언 (Gf.Quatd)
+        """
+        try:
+            camera_path = f"/World/{camera_name}"
+            camera_prim = self.stage.GetPrimAtPath(camera_path)
+            
+            if camera_prim.IsValid():
+                xformable = UsdGeom.Xformable(camera_prim)
+                
+                # 기존 rotate operation 찾기
+                rotate_op = None
+                for op in xformable.GetOrderedXformOps():
+                    if op.GetOpType() in [UsdGeom.XformOp.TypeRotateX, UsdGeom.XformOp.TypeRotateY, 
+                                         UsdGeom.XformOp.TypeRotateZ, UsdGeom.XformOp.TypeOrient]:
+                        rotate_op = op
+                        break
+                
+                # rotate operation이 없으면 새로 생성 (Orient 타입 사용)
+                if rotate_op is None:
+                    rotate_op = xformable.AddOrientOp()
+                
+                # 회전 값 설정 (Gf.Quatd 타입으로)
+                rotate_op.Set(rotation)
+                
+                # 디버깅 정보 (처음 몇 번만)
+                if not hasattr(self, '_rotation_debug_counter'):
+                    self._rotation_debug_counter = 0
+                
+                if self._rotation_debug_counter < 5:
+                    print(f"Camera Rotation Update: {camera_name} -> {rotation}")
+                    self._rotation_debug_counter += 1
+                
+            else:
+                print(f"카메라 프림을 찾을 수 없습니다: {camera_path}")
+                
+        except Exception as e:
+            print(f"카메라 회전 업데이트 중 오류 발생: {e}")
+    
+    def _update_camera_orientation_based_on_tangent(self, camera_name: str, current_pos: Gf.Vec3f, 
+                                                   path_points: list, smoothing_factor: float = 0.3):  # 보간 계수 증가
+        """
+        접선 기반으로 카메라 방향 업데이트
+        
+        Args:
+            camera_name: 카메라 이름
+            current_pos: 현재 카메라 위치
+            path_points: 경로 포인트들
+            smoothing_factor: 부드러운 보간 계수 (0.3으로 증가)
+        """
+        try:
+            print(f"=== 카메라 방향 업데이트 시작 ===")
+            print(f"카메라: {camera_name}")
+            print(f"현재 위치: {current_pos}")
+            print(f"경로 포인트 수: {len(path_points)}")
+            
+            # 1. 현재 위치에서 접선 벡터 계산
+            tangent_vector = self._calculate_tangent_at_position(current_pos, path_points)
+            print(f"계산된 접선 벡터: {tangent_vector}")
+            
+            # 2. 접선 벡터를 쿼터니언으로 변환
+            target_quat = self._tangent_to_quaternion(tangent_vector)
+            print(f"목표 쿼터니언: {target_quat}")
+            
+            # 3. 현재 카메라 회전 가져오기
+            current_quat = self._get_current_camera_rotation(camera_name)
+            print(f"현재 쿼터니언: {current_quat}")
+            
+            # 4. 부드러운 보간 적용 (더 빠른 반응을 위해 계수 증가)
+            smooth_quat = self._smooth_orientation_interpolation(current_quat, target_quat, smoothing_factor)
+            print(f"보간된 쿼터니언: {smooth_quat}")
+            
+            # 5. 카메라 회전 업데이트
+            self._update_camera_rotation(camera_name, smooth_quat)
+            
+            print(f"=== 카메라 방향 업데이트 완료 ===")
+            return True
+            
+        except Exception as e:
+            print(f"카메라 방향 업데이트 실패: {e}")
+            return False
+    
+    def _get_current_camera_rotation(self, camera_name: str):
+        """
+        현재 카메라 회전 값 가져오기
+        
+        Args:
+            camera_name (str): 카메라 이름
+        
+        Returns:
+            Gf.Quatd: 현재 회전 값
+        """
+        try:
+            camera_path = f"/World/{camera_name}"
+            camera_prim = self.stage.GetPrimAtPath(camera_path)
+            
+            if not camera_prim.IsValid():
+                return Gf.Quatd(1, 0, 0, 0)  # 기본값을 Quatd로 변경
+            
+            # Xformable 가져오기
+            xformable = UsdGeom.Xformable(camera_prim)
+            
+            # 회전 operation 찾기
+            for op in xformable.GetOrderedXformOps():
+                if op.GetOpType() in [UsdGeom.XformOp.TypeRotateX, UsdGeom.XformOp.TypeRotateY, 
+                                     UsdGeom.XformOp.TypeRotateZ, UsdGeom.XformOp.TypeOrient]:
+                    current_quat = op.Get()
+                    # 모든 쿼터니언을 Gf.Quatd로 변환
+                    if hasattr(current_quat, 'GetImaginary') and hasattr(current_quat, 'GetReal'):
+                        # 이미 Gf.Quatd인 경우 그대로 반환
+                        return current_quat
+                    else:
+                        # Gf.Quatf인 경우 Gf.Quatd로 변환
+                        return Gf.Quatd(current_quat.GetImaginary()[0], 
+                                       current_quat.GetImaginary()[1], 
+                                       current_quat.GetImaginary()[2], 
+                                       current_quat.GetReal())
+            
+            # 회전 operation이 없으면 기본값 반환
+            return Gf.Quatd(1, 0, 0, 0)  # 단위 쿼터니언 (Quatd)
+            
+        except Exception as e:
+            print(f"카메라 회전 값 가져오기 실패: {e}")
+            return Gf.Quatd(1, 0, 0, 0)
+    
+    def _smooth_orientation_interpolation(self, current_quat: Gf.Quatd, target_quat: Gf.Quatd, 
+                                        smoothing_factor: float = 0.15):
+        """
+        현재 회전과 목표 회전 사이를 부드럽게 보간
+        
+        Args:
+            current_quat: 현재 카메라 쿼터니언 (Gf.Quatd)
+            target_quat: 목표 쿼터니언 (Gf.Quatd)
+            smoothing_factor: 보간 계수 (0~1, 작을수록 부드러움)
+        
+        Returns:
+            Gf.Quatd: 보간된 쿼터니언
+        """
+        try:
+            # 타입 확인 및 변환 - 모든 쿼터니언을 Gf.Quatd로 통일
+            if not isinstance(current_quat, Gf.Quatd):
+                if hasattr(current_quat, 'GetImaginary') and hasattr(current_quat, 'GetReal'):
+                    # Gf.Quatf를 Gf.Quatd로 변환
+                    current_quat = Gf.Quatd(current_quat.GetImaginary()[0], 
+                                           current_quat.GetImaginary()[1], 
+                                           current_quat.GetImaginary()[2], 
+                                           current_quat.GetReal())
+            
+            if not isinstance(target_quat, Gf.Quatd):
+                if hasattr(target_quat, 'GetImaginary') and hasattr(target_quat, 'GetReal'):
+                    # Gf.Quatf를 Gf.Quatd로 변환
+                    target_quat = Gf.Quatd(target_quat.GetImaginary()[0], 
+                                          target_quat.GetImaginary()[1], 
+                                          target_quat.GetImaginary()[2], 
+                                          target_quat.GetReal())
+            
+            # Slerp 함수 호출 수정 - 올바른 시그니처 사용
+            interpolated_quat = Gf.Slerp(smoothing_factor, current_quat, target_quat)
+            return interpolated_quat
+            
+        except Exception as e:
+            print(f"쿼터니언 보간 실패: {e}")
+            # 오류 발생 시 목표 쿼터니언 반환
+            return target_quat 
