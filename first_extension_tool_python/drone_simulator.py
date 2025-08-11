@@ -435,18 +435,18 @@ class DroneSimulator:
         # 1. 카메라의 전방 벡터가 접선 벡터와 일치하도록 회전
         # 2. 카메라의 상향 벡터는 up_vector와 일치하도록 유지
         
-        # 기본 카메라 방향 (Z축이 전방)
-        camera_forward = Gf.Vec3f(0, 0, 1)
+        # 기본 카메라 방향 (Isaac Sim에서는 -Z축이 전방)
+        camera_forward = Gf.Vec3f(0, 0, -1)
         camera_up = Gf.Vec3f(0, 1, 0)
         
         # 접선 벡터가 Z축과 평행한 경우 특별 처리
         if abs(tangent_vector[2]) > 0.99:
             if tangent_vector[2] > 0:
-                # Z축 정방향
-                quat = Gf.Quatd(1, 0, 0, 0)
-            else:
-                # Z축 역방향
+                # Z축 정방향 (Isaac Sim에서는 -Z가 전방이므로 180도 회전)
                 quat = Gf.Quatd(0, 1, 0, 0)
+            else:
+                # Z축 역방향 (Isaac Sim에서는 -Z가 전방이므로 기본 방향)
+                quat = Gf.Quatd(1, 0, 0, 0)
             print(f"수직 이동 쿼터니언: {quat}")
             return quat
         
@@ -521,8 +521,31 @@ class DroneSimulator:
         except Exception as e:
             print(f"카메라 회전 업데이트 중 오류 발생: {e}")
     
+    def _calculate_dynamic_smoothing_factor(self, speed: float, base_factor: float = 0.3) -> float:
+        """
+        속도에 따른 동적 보간 계수 계산
+        
+        Args:
+            speed: 현재 드론 속도 (m/s)
+            base_factor: 기본 보간 계수 (0.3)
+        
+        Returns:
+            float: 속도에 맞게 조정된 보간 계수
+        """
+        # 속도가 빠를수록 더 큰 보간 계수 사용 (부드러운 회전)
+        if speed <= 1.0:
+            # 느린 속도: 기본값 사용
+            return base_factor
+        elif speed <= 3.0:
+            # 중간 속도: 선형 증가
+            speed_ratio = (speed - 1.0) / 2.0
+            return base_factor + (0.6 - base_factor) * speed_ratio
+        else:
+            # 빠른 속도: 최대값 사용
+            return 0.6
+    
     def _update_camera_orientation_based_on_tangent(self, camera_name: str, current_pos: Gf.Vec3f, 
-                                                   path_points: list, smoothing_factor: float = 0.3):  # 보간 계수 증가
+                                                   path_points: list, smoothing_factor: float = None):
         """
         접선 기반으로 카메라 방향 업데이트
         
@@ -530,7 +553,7 @@ class DroneSimulator:
             camera_name: 카메라 이름
             current_pos: 현재 카메라 위치
             path_points: 경로 포인트들
-            smoothing_factor: 부드러운 보간 계수 (0.3으로 증가)
+            smoothing_factor: 부드러운 보간 계수 (None이면 자동 계산)
         """
         try:
             print(f"=== 카메라 방향 업데이트 시작 ===")
@@ -550,11 +573,27 @@ class DroneSimulator:
             current_quat = self._get_current_camera_rotation(camera_name)
             print(f"현재 쿼터니언: {current_quat}")
             
-            # 4. 부드러운 보간 적용 (더 빠른 반응을 위해 계수 증가)
-            smooth_quat = self._smooth_orientation_interpolation(current_quat, target_quat, smoothing_factor)
+            # 4. 동적 보간 계수 계산 (속도에 따라 자동 조정)
+            if smoothing_factor is None:
+                # 현재 드론의 속도 정보 가져오기
+                current_speed = 2.0  # 기본값 (실제로는 drone_info에서 가져와야 함)
+                # 드론 정보에서 현재 속도 찾기
+                for drone_name, drone_info in self.active_drones.items():
+                    if drone_name == camera_name:
+                        current_speed = drone_info.get("speed", 2.0)
+                        break
+                
+                dynamic_smoothing_factor = self._calculate_dynamic_smoothing_factor(current_speed)
+                print(f"현재 속도: {current_speed}m/s, 동적 보간 계수: {dynamic_smoothing_factor:.3f}")
+            else:
+                dynamic_smoothing_factor = smoothing_factor
+                print(f"사용자 지정 보간 계수: {dynamic_smoothing_factor:.3f}")
+            
+            # 5. 부드러운 보간 적용 (동적 계수 사용)
+            smooth_quat = self._smooth_orientation_interpolation(current_quat, target_quat, dynamic_smoothing_factor)
             print(f"보간된 쿼터니언: {smooth_quat}")
             
-            # 5. 카메라 회전 업데이트
+            # 6. 카메라 회전 업데이트
             self._update_camera_rotation(camera_name, smooth_quat)
             
             print(f"=== 카메라 방향 업데이트 완료 ===")
@@ -608,14 +647,14 @@ class DroneSimulator:
             return Gf.Quatd(1, 0, 0, 0)
     
     def _smooth_orientation_interpolation(self, current_quat: Gf.Quatd, target_quat: Gf.Quatd, 
-                                        smoothing_factor: float = 0.15):
+                                        smoothing_factor: float = 0.4):
         """
         현재 회전과 목표 회전 사이를 부드럽게 보간
         
         Args:
             current_quat: 현재 카메라 쿼터니언 (Gf.Quatd)
             target_quat: 목표 쿼터니언 (Gf.Quatd)
-            smoothing_factor: 보간 계수 (0~1, 작을수록 부드러움)
+            smoothing_factor: 보간 계수 (0~1, 작을수록 부드러움, 기본값: 0.4)
         
         Returns:
             Gf.Quatd: 보간된 쿼터니언
