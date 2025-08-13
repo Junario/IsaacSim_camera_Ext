@@ -418,7 +418,7 @@ class DroneSimulator:
     
     def _tangent_to_quaternion(self, tangent_vector: Gf.Vec3f, up_vector: Gf.Vec3f = Gf.Vec3f(0, 0, 1)):
         """
-        접선 벡터를 기반으로 카메라 쿼터니언 생성 (카메라가 진행 방향을 바라보도록)
+        접선 벡터를 기반으로 카메라 쿼터니언 생성 (비행기 날개가 바닥과 평행하게)
         
         Args:
             tangent_vector: 정규화된 접선 벡터 (진행 방향)
@@ -431,51 +431,103 @@ class DroneSimulator:
         
         print(f"접선 벡터를 쿼터니언으로 변환: {tangent_vector}")
         
-        # 카메라가 진행 방향을 바라보도록 하려면:
-        # 1. 카메라의 전방 벡터가 접선 벡터와 일치하도록 회전
-        # 2. 카메라의 상향 벡터는 up_vector와 일치하도록 유지
+        # 비행기 모델링을 위한 좌표계 (Orient 90,90,0 기준):
+        # - X축: 기수 방향 (진행 방향) - +X가 전방
+        # - Y축: 날개 방향 (좌우) - +Y가 왼쪽 날개, -Y가 오른쪽 날개
+        # - Z축: 상하 방향 - +Z가 위쪽
         
-        # 기본 카메라 방향 (Isaac Sim에서는 -Z축이 전방)
-        camera_forward = Gf.Vec3f(0, 0, -1)
-        camera_up = Gf.Vec3f(0, 1, 0)
+        # 기본 비행기 방향 (Orient 90,90,0에서 +X가 전방)
+        plane_forward = Gf.Vec3f(1, 0, 0)   # 기수 방향 (+X)
+        plane_right = Gf.Vec3f(0, -1, 0)    # 날개 방향 (우측: -Y)
+        plane_up = Gf.Vec3f(0, 0, 1)        # 상하 방향 (+Z)
         
-        # 접선 벡터가 Z축과 평행한 경우 특별 처리
-        if abs(tangent_vector[2]) > 0.99:
-            if tangent_vector[2] > 0:
-                # Z축 정방향 (Isaac Sim에서는 -Z가 전방이므로 180도 회전)
-                quat = Gf.Quatd(0, 1, 0, 0)
-            else:
-                # Z축 역방향 (Isaac Sim에서는 -Z가 전방이므로 기본 방향)
+        # 접선 벡터가 X축과 평행한 경우 특별 처리 (Orient 90,90,0 기준)
+        if abs(tangent_vector[0]) > 0.99:
+            if tangent_vector[0] > 0:
+                # X축 정방향 (+X가 전방이므로 기본 방향)
                 quat = Gf.Quatd(1, 0, 0, 0)
-            print(f"수직 이동 쿼터니언: {quat}")
+            else:
+                # X축 역방향 (-X가 전방이므로 180도 회전)
+                quat = Gf.Quatd(0, 0, 1, 0)
+            print(f"수평 이동 쿼터니언: {quat}")
             return quat
         
-        # 접선 벡터를 카메라 전방으로 회전시키는 쿼터니언 계산
-        # 1. 회전축 계산 (카메라 전방과 접선 벡터의 외적)
-        rotation_axis = Gf.Cross(camera_forward, tangent_vector)
+        # 1단계: Yaw 회전 (기수 방향 조정)
+        # 접선 벡터를 XY 평면에 투영하여 Yaw 각도 계산 (Orient 90,90,0 기준)
+        tangent_xy = Gf.Vec3f(tangent_vector[0], tangent_vector[1], 0)
+        if tangent_xy.GetLength() > 1e-6:
+            tangent_xy = tangent_xy.GetNormalized()
+            
+            # Yaw 각도 계산 (XY 평면에서의 회전)
+            yaw_cos = Gf.Dot(plane_forward, tangent_xy)
+            yaw_angle = math.acos(max(-1, min(1, yaw_cos)))
+            
+            # Yaw 회전축 (Z축) - Orient 90,90,0에서 Z축이 수직
+            yaw_axis = Gf.Vec3f(0, 0, 1)
+            
+            # Yaw 쿼터니언
+            yaw_quat = Gf.Quatd(math.sin(yaw_angle/2) * yaw_axis[0],
+                                math.sin(yaw_angle/2) * yaw_axis[1],
+                                math.sin(yaw_angle/2) * yaw_axis[2],
+                                math.cos(yaw_angle/2))
+        else:
+            yaw_quat = Gf.Quatd(1, 0, 0, 0)
         
-        if rotation_axis.GetLength() < 1e-6:
-            # 이미 같은 방향인 경우
-            quat = Gf.Quatd(1, 0, 0, 0)
-            print(f"이미 같은 방향 쿼터니언: {quat}")
-            return quat
+        # 2단계: Pitch 회전 (기수 상하 조정)
+        # 접선 벡터의 Z 성분을 고려한 Pitch 각도 계산 (Orient 90,90,0 기준)
+        if abs(tangent_vector[2]) > 1e-6:
+            # 접선 벡터를 XZ 평면에 투영
+            tangent_xz = Gf.Vec3f(tangent_vector[0], 0, tangent_vector[2])
+            if tangent_xz.GetLength() > 1e-6:
+                tangent_xz = tangent_xz.GetNormalized()
+                
+                # Pitch 각도 계산 (XZ 평면에서의 회전)
+                pitch_cos = Gf.Dot(plane_forward, tangent_xz)
+                pitch_angle = math.acos(max(-1, min(1, pitch_cos)))
+                
+                # Pitch 회전축 (Y축) - Orient 90,90,0에서 Y축이 날개 방향
+                pitch_axis = Gf.Vec3f(0, 1, 0)
+                
+                # Pitch 쿼터니언
+                pitch_quat = Gf.Quatd(math.sin(pitch_angle/2) * pitch_axis[0],
+                                     math.sin(pitch_angle/2) * pitch_axis[1],
+                                     math.sin(pitch_angle/2) * pitch_axis[2],
+                                     math.cos(pitch_angle/2))
+            else:
+                pitch_quat = Gf.Quatd(1, 0, 0, 0)
+        else:
+            pitch_quat = Gf.Quatd(1, 0, 0, 0)
         
-        rotation_axis = rotation_axis.GetNormalized()
+        # 3단계: Roll 회전 (날개 수평 유지) - Orient 90,90,0 기준
+        # Roll 축을 X축으로 변경하여 날개가 수평을 유지하도록 수정
+        if abs(tangent_vector[1]) > 1e-6:
+            # 접선 벡터의 Y 성분을 고려하여 Roll 각도 계산
+            # Roll 회전축을 X축으로 변경 (기수 방향)
+            roll_axis = Gf.Vec3f(1, 0, 0)
+            
+            # Roll 각도 계산 (YZ 평면에서의 회전)
+            # 날개가 바닥과 평행하게 유지되도록 조정
+            roll_angle = math.atan2(tangent_vector[1], tangent_vector[0]) * 0.5  # 절반만 적용
+            
+            # Roll 쿼터니언
+            roll_quat = Gf.Quatd(math.sin(roll_angle/2) * roll_axis[0],
+                                math.sin(roll_angle/2) * roll_axis[1],
+                                math.sin(roll_angle/2) * roll_axis[2],
+                                math.cos(roll_angle/2))
+        else:
+            roll_quat = Gf.Quatd(1, 0, 0, 0)
         
-        # 2. 회전각 계산
-        cos_angle = Gf.Dot(camera_forward, tangent_vector)
-        angle = math.acos(max(-1, min(1, cos_angle)))
+        # 4단계: 모든 회전을 결합 (순서: Roll -> Pitch -> Yaw)
+        # 쿼터니언 곱셈 순서: final_quat = yaw_quat * pitch_quat * roll_quat
+        # Orient 90,90,0 기준으로 순서 조정
+        final_quat = yaw_quat * pitch_quat * roll_quat
         
-        # 3. 쿼터니언 생성
-        quat = Gf.Quatd(math.sin(angle/2) * rotation_axis[0],
-                         math.sin(angle/2) * rotation_axis[1],
-                         math.sin(angle/2) * rotation_axis[2],
-                         math.cos(angle/2))
+        print(f"Yaw 쿼터니언: {yaw_quat}")
+        print(f"Pitch 쿼터니언: {pitch_quat}")
+        print(f"Roll 쿼터니언: {roll_quat}")
+        print(f"최종 쿼터니언 (비행기 모델): {final_quat}")
         
-        print(f"계산된 쿼터니언 (진행 방향): {quat}")
-        print(f"회전축: {rotation_axis}, 회전각: {math.degrees(angle):.2f}도")
-        
-        return quat
+        return final_quat
     
     def _update_camera_rotation(self, camera_name: str, rotation: Gf.Quatd):
         """
